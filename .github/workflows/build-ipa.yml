@@ -1,0 +1,59 @@
+
+name: Build NinePlus IPA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Check Xcode project
+        run: |
+          xcodebuild -list \
+            -project mini-ninebot/mini-ninebot.xcodeproj
+
+      - name: Build iOS app
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project mini-ninebot/mini-ninebot.xcodeproj \
+            -scheme mini-ninebot \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath "$RUNNER_TEMP/NinePlusBuild" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Package IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PRODUCTS="$RUNNER_TEMP/NinePlusBuild/Build/Products/Release-iphoneos"
+          APP="$(find "$PRODUCTS" -maxdepth 1 \
+            -type d -name '*.app' ! -name '*.appex' \
+            -print -quit)"
+
+          if [ -z "$APP" ]; then
+            echo "No app bundle found"
+            exit 1
+          fi
+
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/ipa/Payload/"
+          cd "$RUNNER_TEMP/ipa"
+          zip -qry "$GITHUB_WORKSPACE/NinePlus-unsigned.ipa" Payload
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: NinePlus-unsigned-IPA
+          path: NinePlus-unsigned.ipa
+          if-no-files-found: error
