@@ -171,7 +171,7 @@ struct NinebotServerClient {
         for value in values {
             guard let item = value.objectValue,
                   let vehicleValue = item["vehicle"],
-                  let vehicle = Self.vehicleInfo(vehicleValue) else {
+                  let vehicle = Self.vehicleInfo(from: vehicleValue) else {
                 continue
             }
 
