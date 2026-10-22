@@ -237,7 +237,12 @@ final class NinebotViewModel: ObservableObject {
     func refreshDashboard() async {
         await runLoadingOperation(message: "正在刷新车况") {
             let client = try makeClient()
-            let dashboard = try await client.fetchDashboard(selectedSN: self.dashboard.selectedSN)
+            let dashboard: NinebotDashboard
+            do {
+                dashboard = try await client.fetchCachedDashboard(selectedSN: self.dashboard.selectedSN)
+            } catch {
+                dashboard = try await client.fetchDashboard(selectedSN: self.dashboard.selectedSN)
+            }
             let archivedDashboard = self.saveDashboard(dashboard)
             await self.cacheVehicleImages(for: archivedDashboard)
             await self.refreshResolvedAddressesIfNeeded(for: archivedDashboard)

@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 import UIKit
 
@@ -758,7 +759,11 @@ private struct SettingsProfileCard: View {
     }
 
     private var displayName: String {
-        firstRawString([
+        let resolved = snapshot?.vehicle.ownerName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !resolved.isEmpty {
+            return resolved
+        }
+        return firstRawString([
             "owner_user_nickname",
             "ownerUserNickname",
             "auth_nickname",
@@ -778,7 +783,12 @@ private struct SettingsProfileCard: View {
     }
 
     private var avatarURLString: String? {
-        firstRawString([
+        let resolved = snapshot?.vehicle.ownerAvatarURLString?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !resolved.isEmpty {
+            return resolved
+        }
+        return firstRawString([
             "owner_user_avatar",
             "ownerUserAvatar",
             "auth_avatar",
@@ -809,24 +819,17 @@ private struct SettingsProfileCard: View {
 private struct ProfileAvatar: View {
     var urlString: String?
     var displayName: String
+    @State private var loadedImage: UIImage?
 
     var body: some View {
         ZStack {
             Circle()
                 .fill(Color(.tertiarySystemGroupedBackground))
 
-            if let urlString,
-               let url = URL(string: urlString) {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    default:
-                        fallback
-                    }
-                }
+            if let loadedImage {
+                Image(uiImage: loadedImage)
+                    .resizable()
+                    .scaledToFill()
             } else {
                 fallback
             }
@@ -836,6 +839,9 @@ private struct ProfileAvatar: View {
         .overlay {
             Circle()
                 .stroke(Color(.separator).opacity(0.18), lineWidth: 1)
+        }
+        .task(id: urlString) {
+            loadedImage = await Self.loadAvatar(urlString)
         }
     }
 
@@ -849,6 +855,32 @@ private struct ProfileAvatar: View {
         let value = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let first = value.first else { return "N" }
         return String(first)
+    }
+
+    @MainActor
+    private static func loadAvatar(_ value: String?) async -> UIImage? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty, let url = URL(string: trimmed) else { return nil }
+
+        var request = URLRequest(
+            url: url,
+            cachePolicy: .returnCacheDataElseLoad,
+            timeoutInterval: 15
+        )
+        request.setValue("NineBotPlus/1.0", forHTTPHeaderField: "User-Agent")
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let response = response as? HTTPURLResponse,
+                  (200..<300).contains(response.statusCode),
+                  !data.isEmpty,
+                  data.count <= 2_500_000 else {
+                return nil
+            }
+            return UIImage(data: data)
+        } catch {
+            return nil
+        }
     }
 }
 

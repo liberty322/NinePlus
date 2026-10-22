@@ -162,6 +162,49 @@ struct NinebotServerClient {
         )
     }
 
+    func fetchCachedDashboard(selectedSN: String? = nil) async throws -> NinebotDashboard {
+        let payload = try await request(method: "GET", path: ["dashboard"])
+        let root = payload.objectValue ?? [:]
+        let values = Self.arrayPayload(from: payload, preferredKeys: ["vehicles", "data"])
+        var snapshots: [NinebotVehicleSnapshot] = []
+
+        for value in values {
+            guard let item = value.objectValue,
+                  let vehicleValue = item["vehicle"],
+                  let vehicle = Self.vehicleInfo(vehicleValue) else {
+                continue
+            }
+
+            let status = item["state"]
+            let battery = item["battery"]
+            let travel = item["travel"]
+            let prediction = item["prediction"].flatMap(Self.serverPrediction)
+            let updatedAt = Self.serverDateValue(item["updated_at"] ?? item["updatedAt"]) ?? Date()
+            let state = Self.vehicleState(
+                status: status,
+                travel: travel,
+                battery: battery,
+                prediction: prediction,
+                updatedAt: updatedAt
+            )
+            let resolvedVehicle = Self.vehicleInfo(vehicle, addingImageFrom: status, battery: battery)
+            snapshots.append(NinebotVehicleSnapshot(vehicle: resolvedVehicle, state: state))
+        }
+
+        let resolvedSelectedSN: String?
+        if let selectedSN, snapshots.contains(where: { $0.vehicle.sn == selectedSN }) {
+            resolvedSelectedSN = selectedSN
+        } else {
+            resolvedSelectedSN = snapshots.first?.vehicle.sn
+        }
+        let updatedAt = Self.serverDateValue(root["updated_at"] ?? root["updatedAt"]) ?? Date()
+        return NinebotDashboard(
+            vehicles: snapshots,
+            selectedSN: resolvedSelectedSN,
+            updatedAt: updatedAt
+        )
+    }
+
     func fetchTravelDetail(sn: String, travelID: String) async throws -> NinebotRideDetail {
         let payload = try await request(
             method: "GET",
@@ -434,6 +477,14 @@ private extension NinebotServerClient {
             name: firstString(["device_name", "deviceName", "ble_name"], in: object) ?? sn,
             model: model,
             imageURLString: firstString(["v6_light_img_url", "img_url", "img"], in: object),
+            ownerName: firstString(
+                ["owner_name", "ownerName", "owner_user_nickname", "ownerUserNickname"],
+                in: object
+            ),
+            ownerAvatarURLString: firstString(
+                ["owner_avatar_url", "ownerAvatarURL", "owner_user_avatar", "ownerUserAvatar"],
+                in: object
+            ),
             raw: object
         )
     }

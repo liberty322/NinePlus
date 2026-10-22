@@ -11,8 +11,8 @@ struct NinebotWidgetEntry: TimelineEntry {
 struct NinebotTimelineProvider: TimelineProvider {
     private static let refreshSession: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = 8
-        configuration.timeoutIntervalForResource = 12
+        configuration.timeoutIntervalForRequest = 15
+        configuration.timeoutIntervalForResource = 20
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         return URLSession(configuration: configuration)
     }()
@@ -43,11 +43,11 @@ struct NinebotTimelineProvider: TimelineProvider {
     }
 
     private func refreshIntervalMinutes(for state: NinebotVehicleState?) -> Int {
-        guard let state else { return 30 }
-        if state.isCharging == true, !state.isFullyCharged { return 3 }
-        if state.isLocked == false || state.isPoweredOn == true { return 8 }
-        if let battery = state.battery, battery < 20 { return 10 }
-        return 20
+        guard let state else { return 15 }
+        if state.isCharging == true, !state.isFullyCharged { return 2 }
+        if state.isLocked == false || state.isPoweredOn == true { return 5 }
+        if let battery = state.battery, battery < 20 { return 8 }
+        return 10
     }
 
     private func loadEntry() async -> NinebotWidgetEntry {
@@ -75,7 +75,7 @@ struct NinebotTimelineProvider: TimelineProvider {
 
         do {
             let dashboard = try await NinebotServerClient(configuration: configuration, session: Self.refreshSession)
-                .fetchDashboard(selectedSN: cached?.selectedSN)
+                .fetchCachedDashboard(selectedSN: cached?.selectedSN)
             let archivedDashboard = store.saveDashboard(dashboard)
             store.saveLastWidgetRefreshEvent(NinebotRefreshEvent(
                 source: "Widget",

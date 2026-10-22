@@ -64,7 +64,7 @@ enum NinebotBackgroundTaskManager {
 
         do {
             let dashboard = try await NinebotServerClient(configuration: configuration)
-                .fetchDashboard(selectedSN: cached?.selectedSN)
+                .fetchCachedDashboard(selectedSN: cached?.selectedSN)
             let archivedDashboard = store.saveDashboard(dashboard)
             NinebotChargingLiveActivityManager.sync(with: archivedDashboard)
             store.saveLastAppRefreshEvent(NinebotRefreshEvent(
@@ -94,11 +94,11 @@ enum NinebotBackgroundTaskManager {
     private static var defaultRefreshInterval: TimeInterval {
         let state = NinebotSharedStore().loadDashboard()?.primaryVehicle?.state
         if state?.isCharging == true, state?.isFullyCharged != true {
-            return 15 * 60
+            return 8 * 60
         }
         if state?.isLocked == false || state?.isPoweredOn == true {
-            return 20 * 60
+            return 12 * 60
         }
-        return 30 * 60
+        return 20 * 60
     }
 }
