@@ -220,6 +220,7 @@ private struct RangeCutoffSettingsCard: View {
     @ObservedObject var model: NinebotViewModel
     var snapshot: NinebotVehicleSnapshot
     @State private var cutoff: Double
+    @State private var isExpanded = false
 
     init(model: NinebotViewModel, snapshot: NinebotVehicleSnapshot) {
         self.model = model
@@ -229,76 +230,85 @@ private struct RangeCutoffSettingsCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 13, style: .continuous)
-                        .fill(Color.teslaGreen.opacity(0.12))
-                    Image(systemName: "road.lanes")
-                        .font(.headline.weight(.semibold))
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isExpanded.toggle()
+                }
+            } label: {
+                HStack(alignment: .top, spacing: 12) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 13, style: .continuous)
+                            .fill(Color.teslaGreen.opacity(0.12))
+                        Image(systemName: "road.lanes")
+                            .font(.headline.weight(.semibold))
+                            .foregroundStyle(Color.teslaGreen)
+                    }
+                    .frame(width: 42, height: 42)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("可用续航预估")
+                            .font(.headline)
+                            .foregroundStyle(Color.teslaPrimaryText)
+                        Text("截止 \(Int(cutoff))% · \(snapshot.state.localEstimatedMileageText)")
+                            .font(.caption)
+                            .foregroundStyle(Color.teslaSecondaryText)
+                    }
+
+                    Spacer(minLength: 8)
+
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.teslaSecondaryText)
+                        .frame(width: 24, height: 24)
+                }
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded {
+                HStack {
+                    Text("截止电量")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(Color.teslaPrimaryText)
+                    Spacer()
+                    Text("\(Int(cutoff))%")
+                        .font(.subheadline.monospacedDigit().weight(.semibold))
                         .foregroundStyle(Color.teslaGreen)
                 }
-                .frame(width: 42, height: 42)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("可用续航预估")
-                        .font(.headline)
-                        .foregroundStyle(Color.teslaPrimaryText)
-                    Text("只计算行驶到截止电量前可用的续航")
-                        .font(.caption)
-                        .foregroundStyle(Color.teslaSecondaryText)
+                Slider(value: $cutoff, in: 5...50, step: 5)
+                    .tint(Color.teslaGreen)
+                    .disabled(model.isLoading)
+
+                HStack(spacing: 6) {
+                    Text("5%")
+                    Spacer()
+                    Text("20% 推荐")
+                    Spacer()
+                    Text("50%")
                 }
-
-                Spacer(minLength: 8)
-
-                Text(snapshot.state.localEstimatedMileageText)
-                    .font(.title3.monospacedDigit().weight(.bold))
-                    .foregroundStyle(Color.teslaPrimaryText)
-                    .lineLimit(1)
-            }
-
-            HStack {
-                Text("截止电量")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(Color.teslaPrimaryText)
-                Spacer()
-                Text("\(Int(cutoff))%")
-                    .font(.subheadline.monospacedDigit().weight(.semibold))
-                    .foregroundStyle(Color.teslaGreen)
-            }
-
-            Slider(value: $cutoff, in: 5...50, step: 5)
-                .tint(Color.teslaGreen)
-                .disabled(model.isLoading)
-
-            HStack(spacing: 6) {
-                Text("5%")
-                Spacer()
-                Text("20% 推荐")
-                Spacer()
-                Text("50%")
-            }
-            .font(.caption2)
-            .foregroundStyle(Color.teslaSecondaryText)
-
-            Text(snapshot.state.rangeCutoffSummaryText)
-                .font(.caption)
+                .font(.caption2)
                 .foregroundStyle(Color.teslaSecondaryText)
-                .fixedSize(horizontal: false, vertical: true)
 
-            HStack {
-                Label(snapshot.state.rangeEstimateAccuracyDetailText, systemImage: "chart.bar.doc.horizontal")
-                    .font(.caption.weight(.medium))
+                Text(snapshot.state.rangeCutoffSummaryText)
+                    .font(.caption)
                     .foregroundStyle(Color.teslaSecondaryText)
-                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
 
-                Spacer(minLength: 8)
+                HStack {
+                    Label(snapshot.state.rangeEstimateAccuracyDetailText, systemImage: "chart.bar.doc.horizontal")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(Color.teslaSecondaryText)
+                        .lineLimit(2)
 
-                Button("恢复 20%") {
-                    cutoff = 20
+                    Spacer(minLength: 8)
+
+                    Button("恢复 20%") {
+                        cutoff = 20
+                    }
+                    .font(.caption.weight(.semibold))
+                    .buttonStyle(.bordered)
+                    .disabled(model.isLoading || cutoff == 20)
                 }
-                .font(.caption.weight(.semibold))
-                .buttonStyle(.bordered)
-                .disabled(model.isLoading || cutoff == 20)
             }
         }
         .onChange(of: cutoff) { _, value in
@@ -319,92 +329,109 @@ private struct VehiclePreferencesSettingsCard: View {
     @State private var ratedCapacityText = ""
     @State private var lowBatteryEnabled = false
     @State private var lowBatteryThreshold = 20.0
+    @State private var isExpanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "bolt.batteryblock.fill")
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(Color.teslaGreen)
-                    .frame(width: 42, height: 42)
-                    .background(Color.teslaGreen.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("充电与低电量预警")
-                        .font(.headline)
-                        .foregroundStyle(Color.teslaPrimaryText)
-                    Text("设置只保存到当前车辆，不会影响其他账号")
-                        .font(.caption)
-                        .foregroundStyle(Color.teslaSecondaryText)
-                }
-            }
-
-            VStack(spacing: 10) {
-                SettingsInputField(
-                    title: "额定容量",
-                    placeholder: "例如 1440",
-                    systemImage: "battery.100",
-                    text: $ratedCapacityText,
-                    keyboardType: .decimalPad
-                )
-                SettingsInputField(
-                    title: "电价（元/kWh）",
-                    placeholder: "例如 0.60",
-                    systemImage: "yensign.circle.fill",
-                    text: $electricityPriceText,
-                    keyboardType: .decimalPad
-                )
-            }
-
-            HStack {
-                Toggle("低电量预警", isOn: $lowBatteryEnabled)
-                    .tint(Color.teslaGreen)
-                Spacer(minLength: 12)
-                Text("\(Int(lowBatteryThreshold))%")
-                    .font(.subheadline.monospacedDigit().weight(.semibold))
-                    .foregroundStyle(Color.teslaGreen)
-            }
-
-            Slider(value: $lowBatteryThreshold, in: 5...50, step: 5)
-                .tint(Color.teslaGreen)
-                .disabled(!lowBatteryEnabled)
-
-            Text("达到阈值时由服务器通过 Bark 推送一次，电量回升后会自动重新布防。")
-                .font(.caption)
-                .foregroundStyle(Color.teslaSecondaryText)
-                .fixedSize(horizontal: false, vertical: true)
-
-            if ratedCapacityValue == nil, !ratedCapacityText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Label("额定容量需在 80–10000 Wh 之间", systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-            }
-
             Button {
-                Task {
-                    await model.saveVehiclePreferences(
-                        sn: snapshot.vehicle.sn,
-                        electricityPricePerKWh: electricityPriceValue,
-                        ratedCapacityWh: ratedCapacityValue,
-                        lowBatteryEnabled: lowBatteryEnabled,
-                        lowBatteryThreshold: Int(lowBatteryThreshold)
-                    )
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isExpanded.toggle()
                 }
             } label: {
-                HStack {
-                    if model.isLoading {
-                        ProgressView()
-                            .tint(.white)
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "bolt.batteryblock.fill")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(Color.teslaGreen)
+                        .frame(width: 42, height: 42)
+                        .background(Color.teslaGreen.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("充电与低电量预警")
+                            .font(.headline)
+                            .foregroundStyle(Color.teslaPrimaryText)
+                        Text(compactSummaryText)
+                            .font(.caption)
+                            .foregroundStyle(Color.teslaSecondaryText)
                     }
-                    Text("保存车辆设置")
-                        .font(.subheadline.weight(.semibold))
+
+                    Spacer(minLength: 8)
+
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.teslaSecondaryText)
+                        .frame(width: 24, height: 24)
                 }
-                .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(Color.teslaGreen)
-            .disabled(model.isLoading || !isValidInput)
+            .buttonStyle(.plain)
+
+            if isExpanded {
+                VStack(spacing: 10) {
+                    SettingsInputField(
+                        title: "额定容量",
+                        placeholder: "例如 2808",
+                        systemImage: "battery.100",
+                        text: $ratedCapacityText,
+                        keyboardType: .decimalPad
+                    )
+                    SettingsInputField(
+                        title: "电价（元/kWh）",
+                        placeholder: "例如 0.60",
+                        systemImage: "yensign.circle.fill",
+                        text: $electricityPriceText,
+                        keyboardType: .decimalPad
+                    )
+                }
+
+                HStack {
+                    Toggle("低电量预警", isOn: $lowBatteryEnabled)
+                        .tint(Color.teslaGreen)
+                    Spacer(minLength: 12)
+                    Text("\(Int(lowBatteryThreshold))%")
+                        .font(.subheadline.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(Color.teslaGreen)
+                }
+
+                Slider(value: $lowBatteryThreshold, in: 5...50, step: 5)
+                    .tint(Color.teslaGreen)
+                    .disabled(!lowBatteryEnabled)
+
+                Text("达到阈值时由服务器通过 Bark 推送一次，电量回升后会自动重新布防。")
+                    .font(.caption)
+                    .foregroundStyle(Color.teslaSecondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if ratedCapacityValue == nil, !ratedCapacityText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Label("额定容量需在 80–10000 Wh 之间", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+
+                Button {
+                    Task {
+                        await model.saveVehiclePreferences(
+                            sn: snapshot.vehicle.sn,
+                            electricityPricePerKWh: electricityPriceValue,
+                            ratedCapacityWh: ratedCapacityValue,
+                            lowBatteryEnabled: lowBatteryEnabled,
+                            lowBatteryThreshold: Int(lowBatteryThreshold)
+                        )
+                    }
+                } label: {
+                    HStack {
+                        if model.isLoading {
+                            ProgressView()
+                                .tint(.white)
+                        }
+                        Text("保存车辆设置")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.teslaGreen)
+                .disabled(model.isLoading || !isValidInput)
+            }
         }
         .task(id: snapshot.vehicle.sn) {
             if model.insights(for: snapshot.vehicle.sn) == nil {
@@ -415,6 +442,20 @@ private struct VehiclePreferencesSettingsCard: View {
         .onChange(of: model.vehicleInsights[snapshot.vehicle.sn]) { _, _ in
             applyServerSettings()
         }
+    }
+
+    private var compactSummaryText: String {
+        var parts: [String] = []
+        if let capacity = ratedCapacityValue {
+            parts.append("\(Int(capacity)) Wh")
+        } else {
+            parts.append("容量未设置")
+        }
+        if let price = electricityPriceValue {
+            parts.append(String(format: "¥%.2f/kWh", price))
+        }
+        parts.append(lowBatteryEnabled ? "低电量 \(Int(lowBatteryThreshold))%" : "低电量预警关闭")
+        return parts.joined(separator: " · ")
     }
 
     private var electricityPriceValue: Double? {

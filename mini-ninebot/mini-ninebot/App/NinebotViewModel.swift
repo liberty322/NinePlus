@@ -247,6 +247,7 @@ final class NinebotViewModel: ObservableObject {
             let archivedDashboard = self.saveDashboard(dashboard)
             await self.cacheVehicleImages(for: archivedDashboard)
             await self.refreshResolvedAddressesIfNeeded(for: archivedDashboard)
+            await self.refreshAllVehicleInsights(using: client, dashboard: archivedDashboard)
             self.errorMessage = nil
             self.statusMessage = "已更新 \(Self.timeFormatter.string(from: archivedDashboard.updatedAt))"
             WidgetCenter.shared.reloadAllTimelines()
@@ -619,6 +620,21 @@ final class NinebotViewModel: ObservableObject {
         }
         store.saveConfiguration(configuration)
         return NinebotServerClient(configuration: configuration)
+    }
+
+    private func refreshAllVehicleInsights(
+        using client: NinebotServerClient,
+        dashboard: NinebotDashboard
+    ) async {
+        for snapshot in dashboard.vehicles {
+            do {
+                vehicleInsights[snapshot.vehicle.sn] = try await client.fetchVehicleInsights(
+                    sn: snapshot.vehicle.sn
+                )
+            } catch {
+                continue
+            }
+        }
     }
 
     private func rideDetailKey(vehicleSN: String, rideID: String) -> String {
