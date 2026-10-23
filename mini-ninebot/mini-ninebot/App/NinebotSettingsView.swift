@@ -29,6 +29,13 @@ struct NinebotSettingsView: View {
                 .padding(16)
                 .ninePlusCard(cornerRadius: 28)
 
+                if let snapshot = model.dashboard.primaryVehicle {
+                    RangeCutoffSettingsCard(model: model, snapshot: snapshot)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(16)
+                        .ninePlusCard(cornerRadius: 24)
+                }
+
                 if model.errorMessage != nil || model.statusMessage != nil {
                     SettingsStatusBanner(
                         errorMessage: model.errorMessage,
@@ -200,6 +207,102 @@ struct NinebotSettingsView: View {
         if model.hasConfiguration {
             isShowingConnectionSettings = false
             Task { await model.syncPushDeviceTokenIfPossible() }
+        }
+    }
+}
+
+private struct RangeCutoffSettingsCard: View {
+    @ObservedObject var model: NinebotViewModel
+    var snapshot: NinebotVehicleSnapshot
+    @State private var cutoff: Double
+
+    init(model: NinebotViewModel, snapshot: NinebotVehicleSnapshot) {
+        self.model = model
+        self.snapshot = snapshot
+        _cutoff = State(initialValue: snapshot.state.effectiveRangeCutoffPercent)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .fill(Color.teslaGreen.opacity(0.12))
+                    Image(systemName: "road.lanes")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(Color.teslaGreen)
+                }
+                .frame(width: 42, height: 42)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("可用续航预估")
+                        .font(.headline)
+                        .foregroundStyle(Color.teslaPrimaryText)
+                    Text("只计算行驶到截止电量前可用的续航")
+                        .font(.caption)
+                        .foregroundStyle(Color.teslaSecondaryText)
+                }
+
+                Spacer(minLength: 8)
+
+                Text(snapshot.state.localEstimatedMileageText)
+                    .font(.title3.monospacedDigit().weight(.bold))
+                    .foregroundStyle(Color.teslaPrimaryText)
+                    .lineLimit(1)
+            }
+
+            HStack {
+                Text("截止电量")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(Color.teslaPrimaryText)
+                Spacer()
+                Text("\(Int(cutoff))%")
+                    .font(.subheadline.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(Color.teslaGreen)
+            }
+
+            Slider(value: $cutoff, in: 5...50, step: 5)
+                .tint(Color.teslaGreen)
+                .disabled(model.isLoading)
+
+            HStack(spacing: 6) {
+                Text("5%")
+                Spacer()
+                Text("20% 推荐")
+                Spacer()
+                Text("50%")
+            }
+            .font(.caption2)
+            .foregroundStyle(Color.teslaSecondaryText)
+
+            Text(snapshot.state.rangeCutoffSummaryText)
+                .font(.caption)
+                .foregroundStyle(Color.teslaSecondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack {
+                Label(snapshot.state.rangeEstimateAccuracyDetailText, systemImage: "chart.bar.doc.horizontal")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(Color.teslaSecondaryText)
+                    .lineLimit(2)
+
+                Spacer(minLength: 8)
+
+                Button("恢复 20%") {
+                    cutoff = 20
+                }
+                .font(.caption.weight(.semibold))
+                .buttonStyle(.bordered)
+                .disabled(model.isLoading || cutoff == 20)
+            }
+        }
+        .onChange(of: cutoff) { _, value in
+            model.updateRangeCutoffPercent(sn: snapshot.vehicle.sn, value: value)
+        }
+        .onChange(of: snapshot.state.effectiveRangeCutoffPercent) { _, value in
+            if abs(cutoff - value) >= 0.1 {
+                cutoff = value
+            }
         }
     }
 }

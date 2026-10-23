@@ -275,6 +275,19 @@ final class NinebotViewModel: ObservableObject {
         }
     }
 
+    func updateRangeCutoffPercent(sn: String, value: Double) {
+        let clamped = min(max((value / 5).rounded() * 5, 5), 50)
+        store.saveRangeCutoffPercent(clamped, sn: sn)
+
+        var updated = dashboard
+        if let index = updated.vehicles.firstIndex(where: { $0.vehicle.sn == sn }) {
+            updated.vehicles[index].state.rangeCutoffPercent = clamped
+        }
+        _ = saveDashboard(updated)
+        statusMessage = "续航已按 \(Int(clamped))% 截止电量重新估算"
+        WidgetCenter.shared.reloadAllTimelines()
+    }
+
     func syncTravelMonth(vehicleSN: String, month: String) async {
         await runLoadingOperation(message: "正在获取 \(Self.displayMonth(month)) 行程") {
             self.syncingTravelMonth = month

@@ -1742,6 +1742,11 @@ private struct VehicleControlHero: View {
                     font: .footnote.weight(.medium),
                     foreground: Color.teslaSecondaryText
                 )
+
+                Text(snapshot.state.rangeCutoffSummaryText)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(Color.teslaSecondaryText)
+                    .multilineTextAlignment(.center)
             }
 
             ZStack(alignment: .bottom) {
@@ -2451,6 +2456,10 @@ private struct VehicleRangeEstimatePanel: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                    Text(snapshot.state.rangeCutoffSummaryText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Spacer(minLength: 8)
@@ -2462,7 +2471,10 @@ private struct VehicleRangeEstimatePanel: View {
                     .minimumScaleFactor(0.7)
             }
 
-            RangeEstimateBar(batteryFraction: snapshot.state.batteryFraction)
+            RangeEstimateBar(
+                batteryFraction: snapshot.state.batteryFraction,
+                cutoffFraction: snapshot.state.effectiveRangeCutoffPercent / 100
+            )
 
             HStack(spacing: 10) {
                 BasicInfoTile(
@@ -2484,6 +2496,7 @@ private struct VehicleRangeEstimatePanel: View {
 
 private struct RangeEstimateBar: View {
     var batteryFraction: Double
+    var cutoffFraction: Double
 
     var body: some View {
         GeometryReader { proxy in
@@ -2494,6 +2507,11 @@ private struct RangeEstimateBar: View {
                 Capsule()
                     .fill(Color.teslaGreen.opacity(0.9))
                     .frame(width: max(proxy.size.width * batteryFraction, 8))
+
+                Rectangle()
+                    .fill(Color.orange)
+                    .frame(width: 2, height: 14)
+                    .offset(x: proxy.size.width * min(max(cutoffFraction, 0), 1))
             }
         }
         .frame(height: 8)
@@ -2630,7 +2648,7 @@ private struct TripHeroPanel: View {
                     Text(snapshot.state.rangeEstimateAccuracyText)
                         .font(.title3.monospacedDigit().weight(.bold))
                         .foregroundStyle(Color.teslaGreen)
-                    Text("预估准确率")
+                    Text(snapshot.state.rangeEstimateMetricTitle)
                         .font(.caption2.weight(.medium))
                         .foregroundStyle(Color.teslaSecondaryText)
                 }
@@ -2784,7 +2802,7 @@ private struct TripTrendRangeModelCard: View {
                 ],
                 spacing: 10
             ) {
-                BasicInfoTile(title: "准确率", value: snapshot.state.rangeEstimateAccuracyText, systemImage: "target")
+                BasicInfoTile(title: snapshot.state.rangeEstimateMetricTitle, value: snapshot.state.rangeEstimateAccuracyText, systemImage: "target")
                 BasicInfoTile(title: "有效样本", value: "\(snapshot.state.observedRangeSampleCount) 次", systemImage: "scope")
                 BasicInfoTile(title: "近期效率", value: snapshot.state.rangePerBatteryPercentText, systemImage: "gauge.with.dots.needle.33percent")
                 BasicInfoTile(title: snapshot.state.estimatedMileageSourceTitle, value: snapshot.state.officialEstimatedMileageText, systemImage: "road.lanes")
@@ -2820,7 +2838,7 @@ private struct TripTrendHeroCard: View {
                     Text(snapshot.state.rangeEstimateAccuracyText)
                         .font(.headline.monospacedDigit().weight(.bold))
                         .foregroundStyle(Color.teslaGreen)
-                    Text("预估准确率")
+                    Text(snapshot.state.rangeEstimateMetricTitle)
                         .font(.caption2.weight(.medium))
                         .foregroundStyle(Color.teslaSecondaryText)
                 }
@@ -3858,8 +3876,9 @@ private struct VehicleDetailPanel: View {
                     systemImage: "function",
                     showsAlgorithmFallbackInfo: snapshot.state.isUsingDefaultAlgorithmFallback
                 )
+                DetailRow(title: "截止电量", value: snapshot.state.rangeCutoffSummaryText, systemImage: "flag.checkered")
                 DetailRow(title: "算法参数", value: snapshot.state.rangeModelSummaryText, systemImage: "target")
-                DetailRow(title: "续航可信", value: snapshot.state.rangePerBatteryPercentText, systemImage: "speedometer")
+                DetailRow(title: "续航效率", value: snapshot.state.rangePerBatteryPercentText, systemImage: "speedometer")
                 DetailRow(title: "充电状态", value: snapshot.state.chargingStateText, systemImage: "bolt.fill")
                 if showsChargingTimeDetails {
                     DetailRow(title: "充电速度", value: snapshot.state.estimatedChargingSpeedText, systemImage: "bolt.car.fill")

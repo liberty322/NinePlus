@@ -999,6 +999,7 @@ struct NinebotVehicleState: Codable, Equatable {
     var rawTravel: [String: JSONValue]?
     var rawBattery: [String: JSONValue]?
     var serverPrediction: NinebotServerPrediction? = nil
+    var rangeCutoffPercent: Double? = nil
 
     var batteryText: String {
         guard let battery else { return "--%" }
@@ -1031,7 +1032,7 @@ struct NinebotVehicleState: Codable, Equatable {
     }
 
     var enduranceText: String {
-        guard let estimatedMileage = localEstimatedMileage ?? endurance else { return "-- km" }
+        guard let estimatedMileage = localEstimatedMileage else { return "-- km" }
         return "\(Self.decimalFormatter.string(from: NSNumber(value: estimatedMileage)) ?? "--") km"
     }
 
@@ -1173,8 +1174,8 @@ struct NinebotVehicleState: Codable, Equatable {
             kmPerPercent = observedKmPerBatteryPercent
         } else if let rangePerBatteryPercent, rangePerBatteryPercent > 0 {
             kmPerPercent = rangePerBatteryPercent
-        } else if let localEstimatedMileage, battery > 0 {
-            kmPerPercent = localEstimatedMileage / Double(battery)
+        } else if let officialEstimatedMileage, battery > 0 {
+            kmPerPercent = officialEstimatedMileage / Double(battery)
         } else {
             kmPerPercent = nil
         }
@@ -1209,13 +1210,32 @@ struct NinebotVehicleState: Codable, Equatable {
         return "\(Self.numberText(rangePerBatteryPercent, maximumFractionDigits: 2)) km/%"
     }
 
+    var effectiveRangeCutoffPercent: Double {
+        min(max(rangeCutoffPercent ?? 20, 0), 90)
+    }
+
+    var usableBatteryPercent: Double? {
+        guard let battery else { return nil }
+        return max(Double(battery) - effectiveRangeCutoffPercent, 0)
+    }
+
+    var rangeCutoffSummaryText: String {
+        guard let battery, let usableBatteryPercent else {
+            return "保留 \(Self.numberText(effectiveRangeCutoffPercent, maximumFractionDigits: 0))% 电量"
+        }
+        if usableBatteryPercent <= 0 {
+            return "当前 \(battery)% 已到达截止电量，需要充电"
+        }
+        return "当前 \(battery)%，行驶至 \(Self.numberText(effectiveRangeCutoffPercent, maximumFractionDigits: 0))% 可用 \(Self.numberText(usableBatteryPercent, maximumFractionDigits: 0))% 电量"
+    }
+
     var observedKmPerBatteryPercent: Double? {
         if usesServerAlgorithmEstimate,
            let serverKmPerPercent = serverPrediction?.range.kmPerPercent,
            serverKmPerPercent > 0 {
             return serverKmPerPercent
         }
-        return nil
+        return defaultObservedKmPerBatteryPercent
     }
 
     var observedRangeSampleCount: Int {
@@ -1223,18 +1243,25 @@ struct NinebotVehicleState: Codable, Equatable {
            serverCount > 0 {
             return serverCount
         }
-        return 0
+        return observedRangeSamples.count
     }
 
     var rangeEstimateAccuracy: Double? {
         if let serverAccuracy = serverPrediction?.range.accuracyPercent {
             return min(max(serverAccuracy / 100, 0), 1)
         }
-        return nil
+        if let serverConfidence = serverPrediction?.range.confidencePercent {
+            return min(max(serverConfidence / 100, 0), 1)
+        }
+        return localRangeConfidence
+    }
+
+    var rangeEstimateMetricTitle: String {
+        serverPrediction?.range.accuracyPercent == nil ? "预估可信度" : "预估准确率"
     }
 
     var rangeEstimateAccuracyText: String {
-        guard let rangeEstimateAccuracy else { return "样本不足" }
+        guard let rangeEstimateAccuracy else { return "暂无" }
         return "\(Self.numberText(rangeEstimateAccuracy * 100, maximumFractionDigits: 0))%"
     }
 
@@ -1245,9 +1272,12 @@ struct NinebotVehicleState: Codable, Equatable {
                 let verifiedCount = serverPrediction?.range.measuredSampleCount ?? serverCount
                 return "实测预测误差 · \(verifiedCount) 次已验证行程"
             }
-            return "算法服务端 · \(serverCount) 次有效行程"
+            return "基于 \(serverCount) 次近期有效行程 · 可信度 \(rangeEstimateAccuracyText)"
         }
-        return serverPrediction == nil ? "服务端未返回算法指标" : "服务端样本不足"
+        if observedRangeSampleCount > 0 {
+            return "基于 \(observedRangeSampleCount) 次近期有效行程 · 可信度 \(rangeEstimateAccuracyText)"
+        }
+        return serverPrediction == nil ? "服务端未返回算法指标" : "暂无可用的耗电行程样本"
     }
 
     var rangeModelSummaryText: String {
@@ -1266,17 +1296,14 @@ struct NinebotVehicleState: Codable, Equatable {
             return "服务端已根据近期行程持续校准。"
         }
         if serverPrediction != nil {
-            return "服务端未给出可用算法续航，当前显示官方预估。"
+            return "服务端未给出算法续航，当前按官方效率重算截止电量前的可用里程。"
         }
-        return "服务端未返回算法预测，当前显示官方预估。"
+        return "服务端未返回算法预测，当前按官方效率和截止电量重算可用里程。"
     }
 
     var localEstimatedMileage: Double? {
-        if let serverEstimatedMileage = serverPrediction?.range.estimatedRange,
-           serverEstimatedMileage >= 0 {
-            return serverEstimatedMileage
-        }
-        return officialEstimatedMileage
+        guard let rangeToZero = estimatedRangeToZero else { return nil }
+        return rangeAfterReserve(from: rangeToZero)
     }
 
     var localEstimatedMileageText: String {
@@ -1285,7 +1312,7 @@ struct NinebotVehicleState: Codable, Equatable {
     }
 
     var estimatedMileageSourceTitle: String {
-        "官方预估"
+        "官方到 0%"
     }
 
     var predictionModelTitle: String {
@@ -1314,7 +1341,7 @@ struct NinebotVehicleState: Codable, Equatable {
                 return "服务端默认算法基于 \(sampleText) 计算。"
             }
         }
-        return "服务端未返回算法预测，当前显示官方预估。"
+        return "服务端未返回算法预测，当前按截止电量重算可用里程。"
     }
 
     var monthEnergyPerKm: Double? {
@@ -1500,7 +1527,7 @@ struct NinebotVehicleState: Codable, Equatable {
     private static let fastMinutesPerPercent = 4.0
     private static let taperMinutesPerPercent = 7.0
     private static let electricityPricePerKWh = 0.6
-    private static let minimumObservedKmPerPercent = 0.2
+    private static let minimumObservedKmPerPercent = 0.19
     private static let maximumObservedKmPerPercent = 3.0
     private static let rangeRecencyHalfLifeDays = 14.0
 
@@ -1639,6 +1666,28 @@ struct NinebotVehicleState: Codable, Equatable {
         let consistencyScore = observedRangeConsistencyScore ?? 0.55
         let weight = 0.12 + sampleScore * 0.53 + consistencyScore * 0.25
         return min(max(weight, 0.18), 0.85)
+    }
+
+    private var localRangeConfidence: Double? {
+        let count = observedRangeSamples.count
+        guard count > 0 else { return nil }
+        let sampleScore = min(Double(count) / 12, 1)
+        let consistencyScore = observedRangeConsistencyScore ?? 0.55
+        return min(max(0.35 + sampleScore * 0.4 + consistencyScore * 0.25, 0.35), 0.98)
+    }
+
+    private var estimatedRangeToZero: Double? {
+        if let serverEstimatedMileage = serverPrediction?.range.estimatedRange,
+           serverEstimatedMileage >= 0 {
+            return serverEstimatedMileage
+        }
+        return officialEstimatedMileage
+    }
+
+    private func rangeAfterReserve(from rangeToZero: Double) -> Double? {
+        guard let battery, battery > 0 else { return nil }
+        let usablePercent = max(Double(battery) - effectiveRangeCutoffPercent, 0)
+        return max(rangeToZero, 0) * usablePercent / Double(battery)
     }
 
     private func rideSpeed(_ ride: NinebotRideRecord) -> Double? {

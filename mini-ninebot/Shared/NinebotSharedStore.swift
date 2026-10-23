@@ -17,6 +17,7 @@ struct NinebotSharedStore {
         static let pushDeviceToken = "ninebot.push.device.token"
         static let capturePrivacyProtectionEnabled = "ninebot.capture.privacy.protection.enabled"
         static let pendingAppRoute = "ninebot.pending.app.route"
+        static let rangeCutoffPrefix = "ninebot.range.cutoff."
         static let chargingLiveActivityPushToStartToken = "ninebot.charging.live.activity.push.to.start.token"
         static let chargingLiveActivityPushTokenPrefix = "ninebot.charging.live.activity.push.token."
         static let chargingLiveActivityPushTokenRecords = "ninebot.charging.live.activity.push.token.records"
@@ -192,17 +193,29 @@ struct NinebotSharedStore {
 
     func loadDashboard() -> NinebotDashboard? {
         guard let data = defaults.data(forKey: Key.dashboard) else { return nil }
-        return try? decoder.decode(NinebotDashboard.self, from: data)
+        guard var dashboard = try? decoder.decode(NinebotDashboard.self, from: data) else { return nil }
+        applyStoredRangeCutoffs(to: &dashboard)
+        return dashboard
     }
 
     @discardableResult
     func saveDashboard(_ dashboard: NinebotDashboard) -> NinebotDashboard {
-        let archivedDashboard = dashboardWithArchivedInterfaceRides(dashboard)
+        var archivedDashboard = dashboardWithArchivedInterfaceRides(dashboard)
+        applyStoredRangeCutoffs(to: &archivedDashboard)
         guard let data = try? encoder.encode(archivedDashboard) else { return archivedDashboard }
         defaults.set(data, forKey: Key.dashboard)
         defaults.removeObject(forKey: Key.lastError)
         saveHistorySnapshots(for: archivedDashboard)
         return archivedDashboard
+    }
+
+    func loadRangeCutoffPercent(sn: String) -> Double {
+        guard defaults.object(forKey: rangeCutoffKey(sn: sn)) != nil else { return 20 }
+        return min(max(defaults.double(forKey: rangeCutoffKey(sn: sn)), 5), 50)
+    }
+
+    func saveRangeCutoffPercent(_ value: Double, sn: String) {
+        defaults.set(min(max(value, 5), 50), forKey: rangeCutoffKey(sn: sn))
     }
 
     func loadHistory(sn: String) -> [NinebotVehicleHistoryPoint] {
@@ -450,6 +463,17 @@ struct NinebotSharedStore {
 
     private func historyKey(sn: String) -> String {
         "\(Key.historyPrefix)\(sn)"
+    }
+
+    private func rangeCutoffKey(sn: String) -> String {
+        "\(Key.rangeCutoffPrefix)\(sn)"
+    }
+
+    private func applyStoredRangeCutoffs(to dashboard: inout NinebotDashboard) {
+        for index in dashboard.vehicles.indices {
+            let sn = dashboard.vehicles[index].vehicle.sn
+            dashboard.vehicles[index].state.rangeCutoffPercent = loadRangeCutoffPercent(sn: sn)
+        }
     }
 
     private func interfaceRideKey(sn: String) -> String {
