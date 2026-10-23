@@ -81,16 +81,29 @@ struct NinebotServerClient {
         sn: String,
         electricityPricePerKWh: Double?,
         lowBatteryEnabled: Bool,
-        lowBatteryThreshold: Int
+        lowBatteryThreshold: Int,
+        rangeCutoffPercent: Int? = nil
     ) async throws -> JSONValue {
+        var body: [String: JSONValue] = [
+            "electricity_price_per_kwh": electricityPricePerKWh.map { .number($0) } ?? .null,
+            "low_battery_enabled": .bool(lowBatteryEnabled),
+            "low_battery_threshold": .number(Double(lowBatteryThreshold)),
+        ]
+        if let rangeCutoffPercent {
+            body["range_cutoff_percent"] = .number(Double(rangeCutoffPercent))
+        }
+        return try await request(
+            method: "PATCH",
+            path: ["vehicles", sn, "settings"],
+            jsonBody: .object(body)
+        )
+    }
+
+    func updateRangeCutoffPercent(sn: String, percent: Int) async throws -> JSONValue {
         try await request(
             method: "PATCH",
             path: ["vehicles", sn, "settings"],
-            jsonBody: .object([
-                "electricity_price_per_kwh": electricityPricePerKWh.map { .number($0) } ?? .null,
-                "low_battery_enabled": .bool(lowBatteryEnabled),
-                "low_battery_threshold": .number(Double(lowBatteryThreshold)),
-            ])
+            jsonBody: .object(["range_cutoff_percent": .number(Double(percent))])
         )
     }
 
