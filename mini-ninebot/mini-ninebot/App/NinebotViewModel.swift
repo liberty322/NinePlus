@@ -248,6 +248,7 @@ final class NinebotViewModel: ObservableObject {
             await self.cacheVehicleImages(for: archivedDashboard)
             await self.refreshResolvedAddressesIfNeeded(for: archivedDashboard)
             await self.refreshAllVehicleInsights(using: client, dashboard: archivedDashboard)
+            await self.autoAssociateRecordedRides(using: client, dashboard: archivedDashboard)
             self.errorMessage = nil
             self.statusMessage = "已更新 \(Self.timeFormatter.string(from: archivedDashboard.updatedAt))"
             WidgetCenter.shared.reloadAllTimelines()
@@ -313,7 +314,10 @@ final class NinebotViewModel: ObservableObject {
                 sn: sn,
                 electricityPricePerKWh: electricityPricePerKWh,
                 lowBatteryEnabled: lowBatteryEnabled,
-                lowBatteryThreshold: lowBatteryThreshold
+                lowBatteryThreshold: lowBatteryThreshold,
+                rangeCutoffPercent: self.dashboard.vehicles
+                    .first(where: { $0.vehicle.sn == sn })
+                    .map { Int($0.state.effectiveRangeCutoffPercent.rounded()) }
             )
             let dashboard = try await client.fetchDashboard(selectedSN: sn)
             let archivedDashboard = self.saveDashboard(dashboard)
@@ -366,6 +370,18 @@ final class NinebotViewModel: ObservableObject {
         _ = saveDashboard(updated)
         statusMessage = "续航已按 \(Int(clamped))% 截止电量重新估算"
         WidgetCenter.shared.reloadAllTimelines()
+
+        Task {
+            do {
+                let client = try makeClient()
+                _ = try await client.updateRangeCutoffPercent(
+                    sn: sn,
+                    percent: Int(clamped)
+                )
+            } catch {
+                errorMessage = "截止电量已在本机保存，但同步服务器失败：\(error.localizedDescription)"
+            }
+        }
     }
 
     func syncTravelMonth(vehicleSN: String, month: String) async {
@@ -381,6 +397,7 @@ final class NinebotViewModel: ObservableObject {
             let archivedDashboard = self.saveDashboard(dashboard)
             await self.cacheVehicleImages(for: archivedDashboard)
             await self.refreshResolvedAddressesIfNeeded(for: archivedDashboard)
+            await self.autoAssociateRecordedRides(using: client, dashboard: archivedDashboard)
 
             if page.total == 0 {
                 self.statusMessage = "\(Self.displayMonth(month)) 暂无行程"
@@ -626,15 +643,158 @@ final class NinebotViewModel: ObservableObject {
         using client: NinebotServerClient,
         dashboard: NinebotDashboard
     ) async {
+        var updatedDashboard = dashboard
+        var didChangeRangeCutoff = false
         for snapshot in dashboard.vehicles {
             do {
-                vehicleInsights[snapshot.vehicle.sn] = try await client.fetchVehicleInsights(
+                let insights = try await client.fetchVehicleInsights(
                     sn: snapshot.vehicle.sn
                 )
+                vehicleInsights[snapshot.vehicle.sn] = insights
+                if let cutoff = insights.vehicleSettings["range_cutoff_percent"]?.doubleValue,
+                   let index = updatedDashboard.vehicles.firstIndex(where: {
+                       $0.vehicle.sn == snapshot.vehicle.sn
+                   }) {
+                    let clamped = min(max(cutoff.rounded(), 5), 50)
+                    store.saveRangeCutoffPercent(clamped, sn: snapshot.vehicle.sn)
+                    if updatedDashboard.vehicles[index].state.rangeCutoffPercent != clamped {
+                        updatedDashboard.vehicles[index].state.rangeCutoffPercent = clamped
+                        didChangeRangeCutoff = true
+                    }
+                } else {
+                    _ = try? await client.updateRangeCutoffPercent(
+                        sn: snapshot.vehicle.sn,
+                        percent: Int(snapshot.state.effectiveRangeCutoffPercent.rounded())
+                    )
+                }
             } catch {
                 continue
             }
         }
+        if didChangeRangeCutoff {
+            _ = saveDashboard(updatedDashboard)
+        }
+    }
+
+    private func autoAssociateRecordedRides(
+        using client: NinebotServerClient,
+        dashboard: NinebotDashboard
+    ) async {
+        let rides = dashboard.vehicles.flatMap { snapshot in
+            snapshot.state.rides.map { (vehicleSN: snapshot.vehicle.sn, ride: $0) }
+        }
+        guard !rides.isEmpty else { return }
+
+        var records = store.loadRecordedRides()
+        var usedRideIDs = Set(records.compactMap(\.associatedRideID))
+        var associatedCount = 0
+
+        for index in records.indices {
+            guard records[index].associatedRideID == nil else { continue }
+            let record = records[index]
+            var bestVehicleSN: String?
+            var bestRide: NinebotRideRecord?
+            var bestScore = 0.0
+            var secondBestScore = 0.0
+
+            for candidate in rides {
+                if let vehicleSN = record.vehicleSN, vehicleSN != candidate.vehicleSN {
+                    continue
+                }
+                if usedRideIDs.contains(candidate.ride.id) {
+                    continue
+                }
+                guard let score = Self.rideMatchScore(record: record, ride: candidate.ride) else {
+                    continue
+                }
+                if score > bestScore {
+                    secondBestScore = bestScore
+                    bestScore = score
+                    bestRide = candidate.ride
+                    bestVehicleSN = candidate.vehicleSN
+                } else if score > secondBestScore {
+                    secondBestScore = score
+                }
+            }
+
+            guard let bestRide, let bestVehicleSN,
+                  bestScore >= 0.76,
+                  bestScore - secondBestScore >= 0.08 else {
+                continue
+            }
+
+            do {
+                _ = try await client.saveTravelLink(
+                    sn: bestVehicleSN,
+                    clientRecordID: record.id,
+                    rideID: bestRide.id,
+                    startedAt: record.startedAt,
+                    endedAt: record.endedAt,
+                    mileageKM: record.distanceKilometers
+                )
+                records[index].vehicleSN = bestVehicleSN
+                records[index].associatedRideID = bestRide.id
+                usedRideIDs.insert(bestRide.id)
+                associatedCount += 1
+            } catch {
+                continue
+            }
+        }
+
+        guard associatedCount > 0 else { return }
+        for record in records where record.associatedRideID != nil {
+            if let existing = recordedRides.first(where: { $0.id == record.id }),
+               existing != record {
+                store.upsertRecordedRide(record)
+            } else if !recordedRides.contains(where: { $0.id == record.id }) {
+                store.upsertRecordedRide(record)
+            }
+        }
+        recordedRides = store.loadRecordedRides()
+        statusMessage = "已自动关联 \(associatedCount) 条本地行程"
+    }
+
+    private static func rideMatchScore(
+        record: NinebotRecordedRide,
+        ride: NinebotRideRecord
+    ) -> Double? {
+        guard let rideStart = ride.startedAt,
+              let rideEnd = ride.endedAt,
+              let rideMileage = ride.mileage,
+              rideMileage > 0.15 else {
+            return nil
+        }
+
+        let startDelta = abs(record.startedAt.timeIntervalSince(rideStart))
+        let endDelta = abs(record.endedAt.timeIntervalSince(rideEnd))
+        guard startDelta <= 15 * 60, endDelta <= 20 * 60 else { return nil }
+
+        let overlap = max(
+            min(record.endedAt, rideEnd).timeIntervalSince(max(record.startedAt, rideStart)),
+            0
+        )
+        let shorterDuration = max(
+            min(record.durationSeconds, rideEnd.timeIntervalSince(rideStart)),
+            1
+        )
+        let overlapRatio = min(overlap / shorterDuration, 1)
+        guard overlapRatio >= 0.55 else { return nil }
+
+        let mileageDelta = abs(record.distanceKilometers - rideMileage)
+        let mileageTolerance = max(0.45, rideMileage * 0.28)
+        guard mileageDelta <= mileageTolerance else { return nil }
+        let mileageScore = min(max(1 - mileageDelta / mileageTolerance, 0), 1)
+
+        let durationDelta = abs(
+            record.durationSeconds - rideEnd.timeIntervalSince(rideStart)
+        )
+        let durationTolerance = max(
+            max(record.durationSeconds, rideEnd.timeIntervalSince(rideStart)),
+            60
+        )
+        let durationScore = min(max(1 - durationDelta / durationTolerance, 0), 1)
+
+        return overlapRatio * 0.58 + mileageScore * 0.30 + durationScore * 0.12
     }
 
     private func rideDetailKey(vehicleSN: String, rideID: String) -> String {

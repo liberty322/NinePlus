@@ -743,15 +743,16 @@ private struct BatteryDetailHeroCard: View {
 private struct BatteryHistoryTrendCard: View {
     var points: [NinebotVehicleHistoryPoint]
 
-    private let chartHeight: CGFloat = 164
+    private let chartHeight: CGFloat = 246
 
     private var samples: [NinebotVehicleHistoryPoint] {
-        Array(
-            points
-                .filter { $0.battery != nil || $0.totalMileage != nil }
-                .sorted { $0.date < $1.date }
-                .suffix(48)
-        )
+        let sorted = points
+            .filter { $0.battery != nil || $0.totalMileage != nil }
+            .sorted { $0.date < $1.date }
+        let recent = sorted.filter {
+            $0.date >= Date().addingTimeInterval(-7 * 24 * 60 * 60)
+        }
+        return Array((recent.count >= 2 ? recent : sorted).suffix(48))
     }
 
     private var summary: NinebotVehicleHistorySummary? {
@@ -827,42 +828,31 @@ private struct BatteryHistoryLineChart: View {
     var height: CGFloat
 
     var body: some View {
-        VStack(spacing: 7) {
-            HStack {
-                Text("100%")
-                Spacer()
-                Text(totalMileageTopLabel)
-            }
-            .font(.caption2.monospacedDigit())
-            .foregroundStyle(Color.teslaSecondaryText)
+        VStack(spacing: 10) {
+            chartSection(
+                title: "剩余电量",
+                topText: "100%",
+                bottomText: "0%",
+                values: samples.map { $0.battery.map(Double.init) },
+                range: 0...100,
+                color: Color.teslaGreen,
+                height: (height - 42) / 2
+            )
 
-            GeometryReader { proxy in
-                Canvas { context, size in
-                    drawGrid(in: &context, size: size)
-                    drawLine(
-                        values: samples.map { $0.battery.map(Double.init) },
-                        range: 0...100,
-                        color: Color.teslaGreen,
-                        in: &context,
-                        size: size
-                    )
-                    drawLine(
-                        values: samples.map(\.totalMileage),
-                        range: mileageRange,
-                        color: Color.teslaPrimaryText,
-                        in: &context,
-                        size: size
-                    )
-                }
-            }
-            .frame(height: height)
-            .background(Color.teslaControlBackground.opacity(0.7))
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            chartSection(
+                title: "累计里程",
+                topText: mileageTopText,
+                bottomText: mileageBottomText,
+                values: samples.map(\.totalMileage),
+                range: mileageRange,
+                color: Color.teslaPrimaryText,
+                height: (height - 42) / 2
+            )
 
             HStack {
                 Text(formatTrendTime(samples.first?.date))
                 Spacer()
-                Text("0%")
+                Text(formatTrendTime(samples.dropFirst().dropLast().first?.date))
                 Spacer()
                 Text(formatTrendTime(samples.last?.date))
             }
@@ -873,16 +863,62 @@ private struct BatteryHistoryLineChart: View {
         .accessibilityLabel("电量与行程趋势图")
     }
 
+    private func chartSection(
+        title: String,
+        topText: String,
+        bottomText: String,
+        values: [Double?],
+        range: ClosedRange<Double>,
+        color: Color,
+        height: CGFloat
+    ) -> some View {
+        VStack(spacing: 4) {
+            HStack {
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(color)
+                        .frame(width: 6, height: 6)
+                    Text(title)
+                }
+                Spacer()
+                Text(topText)
+                Text("—")
+                    .foregroundStyle(.tertiary)
+                Text(bottomText)
+            }
+            .font(.caption2.monospacedDigit().weight(.medium))
+            .foregroundStyle(Color.teslaSecondaryText)
+
+            Canvas { context, size in
+                drawGrid(in: &context, size: size)
+                drawLine(
+                    values: values,
+                    range: range,
+                    color: color,
+                    in: &context,
+                    size: size
+                )
+            }
+            .frame(height: height)
+            .background(Color.teslaControlBackground.opacity(0.7))
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+    }
+
     private var mileageRange: ClosedRange<Double> {
         let values = samples.compactMap(\.totalMileage)
         guard let minimum = values.min(), let maximum = values.max() else { return 0...1 }
-        if maximum - minimum < 0.01 { return minimum...(minimum + 1) }
-        return minimum...maximum
+        let rawSpan = maximum - minimum
+        let padding = max(rawSpan * 0.12, 0.2)
+        return (minimum - padding)...(maximum + padding)
     }
 
-    private var totalMileageTopLabel: String {
-        guard let value = samples.compactMap(\.totalMileage).max() else { return "-- km" }
-        return "\(formatTrendMileage(value)) km"
+    private var mileageTopText: String {
+        "\(formatTrendMileage(mileageRange.upperBound)) km"
+    }
+
+    private var mileageBottomText: String {
+        "\(formatTrendMileage(mileageRange.lowerBound)) km"
     }
 
     private func drawGrid(in context: inout GraphicsContext, size: CGSize) {
@@ -909,6 +945,9 @@ private struct BatteryHistoryLineChart: View {
         let inset: CGFloat = 10
         let usableHeight = max(size.height - inset * 2, 1)
         let usableWidth = max(size.width - inset * 2, 1)
+        let firstDate = samples.first?.date ?? Date()
+        let lastDate = samples.last?.date ?? firstDate
+        let timeSpan = max(lastDate.timeIntervalSince(firstDate), 1)
 
         var line = Path()
         var hasActiveSegment = false
@@ -917,7 +956,9 @@ private struct BatteryHistoryLineChart: View {
                 hasActiveSegment = false
                 continue
             }
-            let x = inset + usableWidth * CGFloat(index) / CGFloat(values.count - 1)
+            let date = samples[index].date
+            let timeProgress = min(max(date.timeIntervalSince(firstDate) / timeSpan, 0), 1)
+            let x = inset + usableWidth * CGFloat(timeProgress)
             let progress = min(max((value - lower) / span, 0), 1)
             let y = inset + usableHeight * (1 - CGFloat(progress))
             if !hasActiveSegment {
@@ -995,75 +1036,94 @@ private struct BatteryChargingDetailCard: View {
 private struct BatteryHealthStatusCard: View {
     @ObservedObject var model: NinebotViewModel
     var snapshot: NinebotVehicleSnapshot
+    @State private var isExpanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Label("电池健康", systemImage: "heart.text.square.fill")
-                    .font(.headline)
-                    .foregroundStyle(Color.teslaPrimaryText)
-                Spacer()
-                Text(statusBadgeText)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(statusTint)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 5)
-                    .background(statusTint.opacity(0.12))
-                    .clipShape(Capsule())
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isExpanded.toggle()
+                }
+            } label: {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("电池健康", systemImage: "heart.text.square.fill")
+                            .font(.headline)
+                            .foregroundStyle(Color.teslaPrimaryText)
+                        Text(statusSummaryText)
+                            .font(.caption)
+                            .foregroundStyle(Color.teslaSecondaryText)
+                    }
+                    Spacer()
+                    Text(statusBadgeText)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(statusTint)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(statusTint.opacity(0.12))
+                        .clipShape(Capsule())
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.teslaSecondaryText)
+                        .frame(width: 20, height: 20)
+                }
             }
+            .buttonStyle(.plain)
 
-            if let health = model.insights(for: snapshot.vehicle.sn)?.batteryHealth {
-                DetailSection(title: "健康判定") {
-                    DetailRow(
-                        title: "最近结果",
-                        value: healthText(health),
-                        systemImage: "waveform.path.ecg"
-                    )
-                    DetailRow(
-                        title: "有效满电样本",
-                        value: "\(health["valid_sample_count"]?.intValue ?? 0) 组",
-                        systemImage: "checkmark.seal.fill"
-                    )
-                    DetailRow(
-                        title: "全部样本",
-                        value: "\(health["sample_count"]?.intValue ?? 0) 组",
-                        systemImage: "list.bullet.clipboard.fill"
-                    )
-                }
+            if isExpanded {
+                if let health = model.insights(for: snapshot.vehicle.sn)?.batteryHealth {
+                    DetailSection(title: "健康判定") {
+                        DetailRow(
+                            title: "最近结果",
+                            value: healthText(health),
+                            systemImage: "waveform.path.ecg"
+                        )
+                        DetailRow(
+                            title: "有效满电样本",
+                            value: "\(health["valid_sample_count"]?.intValue ?? 0) 组",
+                            systemImage: "checkmark.seal.fill"
+                        )
+                        DetailRow(
+                            title: "全部样本",
+                            value: "\(health["sample_count"]?.intValue ?? 0) 组",
+                            systemImage: "list.bullet.clipboard.fill"
+                        )
+                    }
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("自动检测流程")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Color.teslaPrimaryText)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("自动检测流程")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color.teslaPrimaryText)
 
-                    HealthWorkflowStep(
-                        number: 1,
-                        title: "充电结束",
-                        detail: "服务器识别拔枪或充电功率归零"
-                    )
-                    HealthWorkflowStep(
-                        number: 2,
-                        title: "原地静置",
-                        detail: "\(health["rest_minutes_required"]?.intValue ?? 180) 分钟后自动读取电压"
-                    )
-                    HealthWorkflowStep(
-                        number: 3,
-                        title: "生成判定",
-                        detail: "低于 80% 的电压只作参考，不会误报衰减"
-                    )
-                }
+                        HealthWorkflowStep(
+                            number: 1,
+                            title: "充电结束",
+                            detail: "服务器识别拔枪或充电功率归零"
+                        )
+                        HealthWorkflowStep(
+                            number: 2,
+                            title: "原地静置",
+                            detail: "\(health["rest_minutes_required"]?.intValue ?? 180) 分钟后自动读取电压"
+                        )
+                        HealthWorkflowStep(
+                            number: 3,
+                            title: "生成判定",
+                            detail: "低于 80% 的电压只作参考，不会误报衰减"
+                        )
+                    }
 
-                Text(health["rule_note"]?.stringValue ?? "满电静置电压才用于电池健康判定。")
-                    .font(.caption)
-                    .foregroundStyle(Color.teslaSecondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                HStack(spacing: 10) {
-                    ProgressView()
-                        .tint(Color.teslaGreen)
-                    Text("正在读取电池健康状态")
+                    Text(health["rule_note"]?.stringValue ?? "满电静置电压才用于电池健康判定。")
                         .font(.caption)
                         .foregroundStyle(Color.teslaSecondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                            .tint(Color.teslaGreen)
+                        Text("正在读取电池健康状态")
+                            .font(.caption)
+                            .foregroundStyle(Color.teslaSecondaryText)
+                    }
                 }
             }
         }
@@ -1088,6 +1148,13 @@ private struct BatteryHealthStatusCard: View {
 
     private var statusTint: Color {
         statusBadgeText == "已检测" ? Color.teslaGreen : .orange
+    }
+
+    private var statusSummaryText: String {
+        guard let health = model.insights(for: snapshot.vehicle.sn)?.batteryHealth else {
+            return "打开 App 时自动刷新"
+        }
+        return "有效满电样本 \(health["valid_sample_count"]?.intValue ?? 0) 组"
     }
 
     private func healthText(_ health: JSONValue) -> String {
