@@ -58,6 +58,9 @@ struct NinebotRecordingView: View {
 
                     RecordingHistorySection(
                         records: model.recordedRides(for: snapshot?.vehicle.sn),
+                        onAssociate: { record in
+                            pendingRecord = record
+                        },
                         onDelete: { record in
                             model.deleteRecordedRide(id: record.id)
                         }
@@ -72,11 +75,12 @@ struct NinebotRecordingView: View {
         .toolbarBackground(.hidden, for: .navigationBar)
         .sheet(item: $pendingRecord) { record in
             RideAssociationSheet(snapshot: snapshot, record: record) { rideID in
-                var savedRecord = record
-                savedRecord.vehicleSN = snapshot?.vehicle.sn
-                savedRecord.associatedRideID = rideID
-                model.saveRecordedRide(savedRecord)
+                var candidate = record
+                candidate.vehicleSN = snapshot?.vehicle.sn
                 pendingRecord = nil
+                Task {
+                    await model.associateRecordedRide(candidate, rideID: rideID)
+                }
             }
         }
         .onAppear {
@@ -1000,6 +1004,7 @@ private struct RecordingTrackPreview: View {
 
 private struct RecordingHistorySection: View {
     var records: [NinebotRecordedRide]
+    var onAssociate: (NinebotRecordedRide) -> Void
     var onDelete: (NinebotRecordedRide) -> Void
 
     var body: some View {
@@ -1019,7 +1024,11 @@ private struct RecordingHistorySection: View {
                 VStack(spacing: 8) {
                     ForEach(records.prefix(5)) { record in
                         NavigationLink {
-                            RecordedRideDetailView(record: record, onDelete: onDelete)
+                            RecordedRideDetailView(
+                                record: record,
+                                onAssociate: onAssociate,
+                                onDelete: onDelete
+                            )
                         } label: {
                             RecordedRideRowContent(record: record)
                         }
@@ -1072,6 +1081,7 @@ private struct RecordedRideRowContent: View {
 
 private struct RecordedRideDetailView: View {
     var record: NinebotRecordedRide
+    var onAssociate: (NinebotRecordedRide) -> Void
     var onDelete: (NinebotRecordedRide) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var isConfirmingDeletion = false
@@ -1084,6 +1094,23 @@ private struct RecordedRideDetailView: View {
                 RecordedRideTrackMap(record: record)
                 RecordedRideDetailMetrics(record: record)
                 RecordedRideExportCard(record: record, copiedMessage: $copiedMessage)
+
+                Button {
+                    onAssociate(record)
+                    dismiss()
+                } label: {
+                    Label(
+                        record.associatedRideID == nil ? "关联官方行程并上传" : "更换关联行程",
+                        systemImage: "link.badge.plus"
+                    )
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 50)
+                    .background(Color.teslaGreen)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+                .buttonStyle(.plain)
 
                 if let associatedRideID = record.associatedRideID {
                     VStack(alignment: .leading, spacing: 8) {

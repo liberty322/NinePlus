@@ -34,6 +34,11 @@ struct NinebotSettingsView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(16)
                         .ninePlusCard(cornerRadius: 24)
+
+                    VehiclePreferencesSettingsCard(model: model, snapshot: snapshot)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(16)
+                        .ninePlusCard(cornerRadius: 24)
                 }
 
                 if model.errorMessage != nil || model.statusMessage != nil {
@@ -304,6 +309,157 @@ private struct RangeCutoffSettingsCard: View {
                 cutoff = value
             }
         }
+    }
+}
+
+private struct VehiclePreferencesSettingsCard: View {
+    @ObservedObject var model: NinebotViewModel
+    var snapshot: NinebotVehicleSnapshot
+    @State private var electricityPriceText = ""
+    @State private var ratedCapacityText = ""
+    @State private var lowBatteryEnabled = false
+    @State private var lowBatteryThreshold = 20.0
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "bolt.batteryblock.fill")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(Color.teslaGreen)
+                    .frame(width: 42, height: 42)
+                    .background(Color.teslaGreen.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("充电与低电量预警")
+                        .font(.headline)
+                        .foregroundStyle(Color.teslaPrimaryText)
+                    Text("设置只保存到当前车辆，不会影响其他账号")
+                        .font(.caption)
+                        .foregroundStyle(Color.teslaSecondaryText)
+                }
+            }
+
+            VStack(spacing: 10) {
+                SettingsInputField(
+                    title: "额定容量",
+                    placeholder: "例如 1440",
+                    systemImage: "battery.100",
+                    text: $ratedCapacityText,
+                    keyboardType: .decimalPad
+                )
+                SettingsInputField(
+                    title: "电价（元/kWh）",
+                    placeholder: "例如 0.60",
+                    systemImage: "yensign.circle.fill",
+                    text: $electricityPriceText,
+                    keyboardType: .decimalPad
+                )
+            }
+
+            HStack {
+                Toggle("低电量预警", isOn: $lowBatteryEnabled)
+                    .tint(Color.teslaGreen)
+                Spacer(minLength: 12)
+                Text("\(Int(lowBatteryThreshold))%")
+                    .font(.subheadline.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(Color.teslaGreen)
+            }
+
+            Slider(value: $lowBatteryThreshold, in: 5...50, step: 5)
+                .tint(Color.teslaGreen)
+                .disabled(!lowBatteryEnabled)
+
+            Text("达到阈值时由服务器通过 Bark 推送一次，电量回升后会自动重新布防。")
+                .font(.caption)
+                .foregroundStyle(Color.teslaSecondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if ratedCapacityValue == nil, !ratedCapacityText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Label("额定容量需在 80–10000 Wh 之间", systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+
+            Button {
+                Task {
+                    await model.saveVehiclePreferences(
+                        sn: snapshot.vehicle.sn,
+                        electricityPricePerKWh: electricityPriceValue,
+                        ratedCapacityWh: ratedCapacityValue,
+                        lowBatteryEnabled: lowBatteryEnabled,
+                        lowBatteryThreshold: Int(lowBatteryThreshold)
+                    )
+                }
+            } label: {
+                HStack {
+                    if model.isLoading {
+                        ProgressView()
+                            .tint(.white)
+                    }
+                    Text("保存车辆设置")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Color.teslaGreen)
+            .disabled(model.isLoading || !isValidInput)
+        }
+        .task(id: snapshot.vehicle.sn) {
+            if model.insights(for: snapshot.vehicle.sn) == nil {
+                await model.refreshVehicleInsights(sn: snapshot.vehicle.sn)
+            }
+            applyServerSettings()
+        }
+        .onChange(of: model.vehicleInsights[snapshot.vehicle.sn]) { _, _ in
+            applyServerSettings()
+        }
+    }
+
+    private var electricityPriceValue: Double? {
+        let trimmed = electricityPriceText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : Double(trimmed.replacingOccurrences(of: ",", with: "."))
+    }
+
+    private var ratedCapacityValue: Double? {
+        let trimmed = ratedCapacityText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let value = Double(trimmed.replacingOccurrences(of: ",", with: ".")),
+              80...10000 ~= value else {
+            return nil
+        }
+        return value
+    }
+
+    private var isValidInput: Bool {
+        let capacityIsBlank = ratedCapacityText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let priceIsBlank = electricityPriceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let priceValid = priceIsBlank
+            || electricityPriceValue.map { (0...20).contains($0) } == true
+        return (capacityIsBlank || ratedCapacityValue != nil) && priceValid
+    }
+
+    private func applyServerSettings() {
+        guard let insights = model.insights(for: snapshot.vehicle.sn) else { return }
+        electricityPriceText = Self.inputText(
+            insights.vehicleSettings["electricity_price_per_kwh"]?.doubleValue
+        )
+        lowBatteryEnabled = insights.vehicleSettings["low_battery_enabled"]?.boolValue ?? false
+        lowBatteryThreshold = Double(
+            insights.vehicleSettings["low_battery_threshold"]?.intValue ?? 20
+        )
+        ratedCapacityText = Self.inputText(
+            insights.batterySettings?["capacity_wh"]?.doubleValue
+        )
+    }
+
+    private static func inputText(_ value: Double?) -> String {
+        guard let value else { return "" }
+        if value.rounded() == value {
+            return String(Int(value))
+        }
+        return String(format: "%.2f", value)
     }
 }
 

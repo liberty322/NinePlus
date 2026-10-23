@@ -146,6 +146,7 @@ final class NinebotViewModel: ObservableObject {
     @Published private(set) var rideDetails: [String: NinebotRideDetail] = [:]
     @Published private(set) var loadingRideDetailKeys: Set<String> = []
     @Published private(set) var syncingTravelMonth: String?
+    @Published private(set) var vehicleInsights: [String: NinebotVehicleInsights] = [:]
 
     private let store = NinebotSharedStore()
     private var lastAutomaticRefreshAt: Date?
@@ -272,6 +273,84 @@ final class NinebotViewModel: ObservableObject {
             self.errorMessage = nil
             self.statusMessage = "已更新\(chemistry.title)电池参数"
             WidgetCenter.shared.reloadAllTimelines()
+        }
+    }
+
+    func insights(for sn: String) -> NinebotVehicleInsights? {
+        vehicleInsights[sn]
+    }
+
+    func refreshVehicleInsights(sn: String) async {
+        do {
+            let client = try makeClient()
+            vehicleInsights[sn] = try await client.fetchVehicleInsights(sn: sn)
+            errorMessage = nil
+        } catch {
+            errorMessage = "服务器数据加载失败：\(error.localizedDescription)"
+        }
+    }
+
+    func saveVehiclePreferences(
+        sn: String,
+        electricityPricePerKWh: Double?,
+        ratedCapacityWh: Double?,
+        lowBatteryEnabled: Bool,
+        lowBatteryThreshold: Int
+    ) async {
+        await runLoadingOperation(message: "正在保存车辆设置") {
+            let client = try makeClient()
+            let chemistry = self.dashboard.vehicles
+                .first(where: { $0.vehicle.sn == sn })?
+                .state.serverPrediction?.batteryChemistry?.configured ?? .auto
+            _ = try await client.updateBatteryChemistry(
+                sn: sn,
+                chemistry: chemistry,
+                nominalVoltage: nil,
+                capacityWh: ratedCapacityWh
+            )
+            _ = try await client.updateVehicleSettings(
+                sn: sn,
+                electricityPricePerKWh: electricityPricePerKWh,
+                lowBatteryEnabled: lowBatteryEnabled,
+                lowBatteryThreshold: lowBatteryThreshold
+            )
+            let dashboard = try await client.fetchDashboard(selectedSN: sn)
+            let archivedDashboard = self.saveDashboard(dashboard)
+            await self.cacheVehicleImages(for: archivedDashboard)
+            self.vehicleInsights[sn] = try await client.fetchVehicleInsights(sn: sn)
+            self.errorMessage = nil
+            self.statusMessage = "车辆设置已保存，续航与充电统计已重新计算"
+            WidgetCenter.shared.reloadAllTimelines()
+        }
+    }
+
+    func associateRecordedRide(_ record: NinebotRecordedRide, rideID: String?) async {
+        await runLoadingOperation(message: rideID == nil ? "正在取消行程关联" : "正在关联并上传行程") {
+            let client = try makeClient()
+            if let rideID {
+                guard let sn = record.vehicleSN else {
+                    throw NinebotServerError.server("这条记录没有车辆信息")
+                }
+                _ = try await client.saveTravelLink(
+                    sn: sn,
+                    clientRecordID: record.id,
+                    rideID: rideID,
+                    startedAt: record.startedAt,
+                    endedAt: record.endedAt,
+                    mileageKM: record.distanceKilometers
+                )
+                self.vehicleInsights[sn] = try await client.fetchVehicleInsights(sn: sn)
+            } else if let sn = record.vehicleSN, record.associatedRideID != nil {
+                _ = try await client.deleteTravelLink(sn: sn, clientRecordID: record.id)
+                self.vehicleInsights[sn] = try await client.fetchVehicleInsights(sn: sn)
+            }
+
+            var updated = record
+            updated.associatedRideID = rideID
+            self.store.upsertRecordedRide(updated)
+            self.recordedRides = self.store.loadRecordedRides()
+            self.errorMessage = nil
+            self.statusMessage = rideID == nil ? "已取消行程关联" : "行程已关联并上传到服务器"
         }
     }
 

@@ -463,6 +463,7 @@ private struct NinebotBatteryDetailView: View {
                 BatteryDetailHeroCard(snapshot: snapshot)
                 BatteryHistoryTrendCard(points: points)
                 BatteryChemistrySettingsCard(model: model, snapshot: snapshot)
+                BatteryServerInsightsCard(model: model, snapshot: snapshot)
 
                 if snapshot.state.isCharging == true || snapshot.state.isFullyCharged {
                     BatteryChargingDetailCard(snapshot: snapshot)
@@ -475,6 +476,12 @@ private struct NinebotBatteryDetailView: View {
         .background(Color.teslaPageBackground.ignoresSafeArea())
         .navigationTitle("电池")
         .navigationBarTitleDisplayMode(.inline)
+        .task {
+            await model.refreshVehicleInsights(sn: snapshot.vehicle.sn)
+        }
+        .refreshable {
+            await model.refreshVehicleInsights(sn: snapshot.vehicle.sn)
+        }
     }
 }
 
@@ -985,6 +992,207 @@ private struct BatteryChargingDetailCard: View {
                 .stroke(Color.teslaHairline, lineWidth: 1)
         }
     }
+}
+
+private struct BatteryServerInsightsCard: View {
+    @ObservedObject var model: NinebotViewModel
+    var snapshot: NinebotVehicleSnapshot
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Label("服务器统计", systemImage: "chart.bar.xaxis")
+                    .font(.headline)
+                    .foregroundStyle(Color.teslaPrimaryText)
+                Spacer()
+                if model.isLoading {
+                    ProgressView()
+                        .tint(Color.teslaGreen)
+                }
+            }
+
+            if let insights = model.insights(for: snapshot.vehicle.sn) {
+                DetailSection(title: "充电量") {
+                    DetailRow(
+                        title: "本周",
+                        value: aggregateText(insights.chargingSummary["week"]),
+                        systemImage: "calendar"
+                    )
+                    DetailRow(
+                        title: "本月",
+                        value: aggregateText(insights.chargingSummary["month"]),
+                        systemImage: "calendar.badge.clock"
+                    )
+                    DetailRow(
+                        title: "累计",
+                        value: aggregateText(insights.chargingSummary["lifetime"]),
+                        systemImage: "sum"
+                    )
+                }
+
+                DetailSection(title: "电池健康") {
+                    DetailRow(
+                        title: "最近判定",
+                        value: healthText(insights.batteryHealth),
+                        systemImage: "heart.text.square.fill"
+                    )
+                    DetailRow(
+                        title: "有效样本",
+                        value: "\(insights.batteryHealth["valid_sample_count"]?.intValue ?? 0) 组",
+                        systemImage: "checkmark.seal.fill"
+                    )
+                    DetailRow(
+                        title: "静置时间",
+                        value: "\(insights.batteryHealth["rest_minutes_required"]?.intValue ?? 180) 分钟",
+                        systemImage: "timer"
+                    )
+                }
+
+                DetailSection(title: "续航学习") {
+                    DetailRow(
+                        title: "有效续航行",
+                        value: rangeSampleStatusText(insights),
+                        systemImage: "road.lanes"
+                    )
+                    DetailRow(
+                        title: "服务器模型",
+                        value: rangeSampleDetailText(insights),
+                        systemImage: "brain.head.profile"
+                    )
+                }
+
+                if !insights.chargingItems.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("最近充电")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color.teslaPrimaryText)
+
+                        ForEach(Array(insights.chargingItems.prefix(4).enumerated()), id: \.offset) { _, item in
+                            HStack(alignment: .top, spacing: 10) {
+                                Image(systemName: "bolt.circle.fill")
+                                    .foregroundStyle(Color.teslaGreen)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(chargingSessionTitle(item))
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(Color.teslaPrimaryText)
+                                    Text(chargingSessionDetail(item))
+                                        .font(.caption2.monospacedDigit())
+                                        .foregroundStyle(Color.teslaSecondaryText)
+                                }
+                                Spacer()
+                            }
+                        }
+                    }
+                } else {
+                    Text("还没有完成的充电记录。填写额定容量后，后续每次拔枪都会自动计算充电量与电费。")
+                        .font(.caption)
+                        .foregroundStyle(Color.teslaSecondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                HStack(spacing: 10) {
+                    ProgressView()
+                        .tint(Color.teslaGreen)
+                    Text("正在读取服务器充电与健康记录")
+                        .font(.caption)
+                        .foregroundStyle(Color.teslaSecondaryText)
+                }
+            }
+        }
+        .padding(16)
+        .background(Color.teslaCardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(Color.teslaHairline, lineWidth: 1)
+        }
+    }
+
+    private func aggregateText(_ value: JSONValue?) -> String {
+        let sessions = value?["sessions"]?.intValue ?? 0
+        let energy = value?["energy_kwh"]?.doubleValue ?? 0
+        let cost = value?["estimated_cost_yuan"]?.doubleValue
+        let costText = cost.map { String(format: " · ¥%.2f", $0) } ?? ""
+        return "\(sessions) 次 · \(String(format: "%.3f", energy)) kWh\(costText)"
+    }
+
+    private func healthText(_ health: JSONValue) -> String {
+        if let valid = health["latest_valid"], let label = valid["display_label"]?.stringValue {
+            return label
+        }
+        if let latest = health["latest"], let label = latest["display_label"]?.stringValue {
+            return label
+        }
+        return "等待满电静置样本"
+    }
+
+    private func rangeSampleStatusText(_ insights: NinebotVehicleInsights) -> String {
+        guard let stats = insights.rangeSampleStats else { return "暂无服务器分析结果" }
+        let count = stats["sample_count"]?.intValue ?? 0
+        let minimum = stats["minimum_samples"]?.intValue ?? 3
+        let rejected = stats["rejected_sample_count"]?.intValue ?? 0
+        if stats["has_sufficient_samples"]?.boolValue == true {
+            return "\(count) 条，已启用个性化续航"
+        }
+        return "\(count)/\(minimum) 条，还差 \(max(minimum - count, 0)) 条；已排除 \(rejected) 条"
+    }
+
+    private func rangeSampleDetailText(_ insights: NinebotVehicleInsights) -> String {
+        let reasons = insights.rangeSampleItems
+            .filter { $0["accepted"]?.boolValue == false }
+            .compactMap { rejectionReasonText($0["rejection_reason"]?.stringValue) }
+        if let first = reasons.first {
+            return reasons.count > 1 ? "\(first)；另有 \(reasons.count - 1) 条被过滤" : first
+        }
+        if insights.rangeSampleStats?["has_sufficient_samples"]?.boolValue == true {
+            return "服务器自动使用最近行程计算 km/%"
+        }
+        return "至少完成 3 次有效骑行后自动切换个性化模型"
+    }
+
+    private func rejectionReasonText(_ reason: String?) -> String? {
+        switch reason {
+        case "mileage_too_short": return "行程太短"
+        case "used_percent_missing_or_invalid": return "耗电比例缺失或异常"
+        case "duration_too_short": return "骑行时长太短"
+        case "speed_too_high": return "速度数据异常"
+        case "km_per_percent_outlier": return "每百分点里程异常"
+        default: return reason
+        }
+    }
+
+    private func chargingSessionTitle(_ item: JSONValue) -> String {
+        guard let raw = item["started_at"]?.stringValue else {
+            return "充电记录"
+        }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard let date = formatter.date(from: raw) else { return raw }
+        return Self.dateFormatter.string(from: date)
+    }
+
+    private func chargingSessionDetail(_ item: JSONValue) -> String {
+        let start = item["start_percent"]?.intValue
+        let end = item["end_percent"]?.intValue
+        let soc = start.map { startValue in
+            "\(startValue)% → \(end.map { String($0) } ?? "--")%"
+        } ?? "电量差未记录"
+        if let energy = item["energy_kwh"]?.doubleValue {
+            let costText = item["estimated_cost_yuan"]?.doubleValue.map {
+                String(format: " · ¥%.2f", $0)
+            } ?? ""
+            return "\(soc) · \(String(format: "%.3f", energy)) kWh\(costText)"
+        }
+        return "\(soc) · 请先填写额定容量"
+    }
+
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.timeZone = TimeZone(identifier: "Asia/Shanghai")
+        formatter.dateFormat = "MM-dd HH:mm"
+        return formatter
+    }()
 }
 
 private struct BatteryDetailMiniMetric: View {
@@ -4910,15 +5118,15 @@ private struct RawPayloadCopyPanel: View {
 
 extension Color {
     static let teslaPageBackground = dynamic(
-        light: UIColor(red: 0.945, green: 0.952, blue: 0.96, alpha: 1),
+        light: UIColor(red: 0.97, green: 0.97, blue: 0.98, alpha: 1),
         dark: UIColor(red: 0.025, green: 0.029, blue: 0.035, alpha: 1)
     )
     static let teslaCardBackground = dynamic(
-        light: UIColor(red: 0.995, green: 0.995, blue: 1.0, alpha: 1),
+        light: UIColor.white,
         dark: UIColor(red: 0.075, green: 0.08, blue: 0.092, alpha: 1)
     )
     static let teslaControlBackground = dynamic(
-        light: UIColor(red: 0.91, green: 0.925, blue: 0.94, alpha: 1),
+        light: UIColor(red: 0.95, green: 0.95, blue: 0.97, alpha: 1),
         dark: UIColor(red: 0.125, green: 0.135, blue: 0.152, alpha: 1)
     )
     static let teslaPrimaryText = dynamic(
