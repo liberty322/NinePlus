@@ -265,6 +265,35 @@ struct NinebotServerPrediction: Codable, Equatable {
     var charging: NinebotServerChargingPrediction
 }
 
+struct NinebotVehicleInsights: Equatable {
+    var settings: JSONValue = .object([:])
+    var chargingSummary: JSONValue = .object([:])
+    var chargingHistory: [JSONValue] = []
+    var batteryHealth: JSONValue = .object([:])
+    var rangeSamples: JSONValue = .object([:])
+    var loadedAt: Date = .distantPast
+
+    var batterySettings: JSONValue? {
+        settings["battery"]
+    }
+
+    var vehicleSettings: JSONValue {
+        settings
+    }
+
+    var chargingItems: [JSONValue] {
+        chargingHistory
+    }
+
+    var rangeSampleItems: [JSONValue] {
+        rangeSamples["items"]?.arrayValue ?? []
+    }
+
+    var rangeSampleStats: JSONValue? {
+        rangeSamples["stats"]
+    }
+}
+
 struct NinebotRideRecord: Codable, Equatable, Identifiable {
     var id: String
     var startedAt: Date?

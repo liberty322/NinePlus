@@ -77,6 +77,78 @@ struct NinebotServerClient {
         return Self.batteryChemistryInfo(from: payload.objectValue?["battery_chemistry"] ?? payload.objectValue?["batteryChemistry"])
     }
 
+    func updateVehicleSettings(
+        sn: String,
+        electricityPricePerKWh: Double?,
+        lowBatteryEnabled: Bool,
+        lowBatteryThreshold: Int
+    ) async throws -> JSONValue {
+        try await request(
+            method: "PATCH",
+            path: ["vehicles", sn, "settings"],
+            jsonBody: .object([
+                "electricity_price_per_kwh": electricityPricePerKWh.map { .number($0) } ?? .null,
+                "low_battery_enabled": .bool(lowBatteryEnabled),
+                "low_battery_threshold": .number(Double(lowBatteryThreshold)),
+            ])
+        )
+    }
+
+    func fetchVehicleInsights(sn: String) async throws -> NinebotVehicleInsights {
+        var insights = NinebotVehicleInsights()
+        insights.settings = try await request(method: "GET", path: ["vehicles", sn, "settings"])
+        insights.chargingSummary = (try? await request(
+            method: "GET",
+            path: ["vehicles", sn, "charging-summary"]
+        )) ?? .object([:])
+        insights.batteryHealth = (try? await request(
+            method: "GET",
+            path: ["vehicles", sn, "battery-health"]
+        )) ?? .object([:])
+        insights.rangeSamples = (try? await request(
+            method: "GET",
+            path: ["vehicles", sn, "range-samples"]
+        )) ?? .object([:])
+        let history = (try? await request(
+            method: "GET",
+            path: ["vehicles", sn, "charging-history"],
+            queryItems: [URLQueryItem(name: "limit", value: "50")]
+        )) ?? .object([:])
+        insights.chargingHistory = history["items"]?.arrayValue ?? []
+        insights.loadedAt = Date()
+        return insights
+    }
+
+    func saveTravelLink(
+        sn: String,
+        clientRecordID: String,
+        rideID: String,
+        startedAt: Date,
+        endedAt: Date,
+        mileageKM: Double
+    ) async throws -> JSONValue {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return try await request(
+            method: "POST",
+            path: ["vehicles", sn, "travel-links"],
+            jsonBody: .object([
+                "client_record_id": .string(clientRecordID),
+                "travel_id": .string(rideID),
+                "started_at": .string(formatter.string(from: startedAt)),
+                "ended_at": .string(formatter.string(from: endedAt)),
+                "mileage_km": .number(mileageKM),
+            ])
+        )
+    }
+
+    func deleteTravelLink(sn: String, clientRecordID: String) async throws -> JSONValue {
+        try await request(
+            method: "DELETE",
+            path: ["vehicles", sn, "travel-links", clientRecordID]
+        )
+    }
+
     func fetchDashboard(selectedSN: String? = nil) async throws -> NinebotDashboard {
         let vehiclesPayload = try await request(method: "GET", path: ["vehicles"])
         let vehicleValues = Self.arrayPayload(from: vehiclesPayload, preferredKeys: ["vehicles", "data"])
@@ -320,7 +392,8 @@ struct NinebotServerClient {
         method: String,
         path: [String],
         queryItems: [URLQueryItem] = [],
-        body: [String: String]? = nil
+        body: [String: String]? = nil,
+        jsonBody: JSONValue? = nil
     ) async throws -> JSONValue {
         let url = try buildURL(path: path, queryItems: queryItems)
         var request = URLRequest(url: url)
@@ -337,7 +410,10 @@ struct NinebotServerClient {
             request.setValue(sessionToken, forHTTPHeaderField: "X-NinePlus-Session")
         }
 
-        if let body {
+        if let jsonBody {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONEncoder().encode(jsonBody)
+        } else if let body {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONEncoder().encode(body)
         }
