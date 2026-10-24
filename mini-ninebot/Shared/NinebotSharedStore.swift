@@ -191,6 +191,34 @@ struct NinebotSharedStore {
         defaults.removeObject(forKey: Key.loginResult)
     }
 
+    func clearVehicleSessionData() {
+        clearLoginResult()
+        clearServerCaches()
+        removeAllChargingLiveActivityPushTokens()
+    }
+
+    func clearServerCaches() {
+        defaults.removeObject(forKey: Key.dashboard)
+        defaults.removeObject(forKey: Key.lastError)
+        defaults.removeObject(forKey: Key.resolvedAddresses)
+
+        let keys = Array(defaults.dictionaryRepresentation().keys)
+        for key in keys {
+            if key.hasPrefix(Key.historyPrefix)
+                || key.hasPrefix(Key.interfaceRidePrefix)
+                || key.hasPrefix(Key.vehicleImagePrefix) {
+                defaults.removeObject(forKey: key)
+            }
+        }
+        removeVehicleImages()
+    }
+
+    func clearAllLocalData() {
+        removeKeys(withPrefix: "ninebot.", from: defaults)
+        removeKeys(withPrefix: "ninebot.", from: .standard)
+        removeVehicleImages()
+    }
+
     func loadDashboard() -> NinebotDashboard? {
         guard let data = defaults.data(forKey: Key.dashboard) else { return nil }
         guard var dashboard = try? decoder.decode(NinebotDashboard.self, from: data) else { return nil }
@@ -506,6 +534,22 @@ struct NinebotSharedStore {
         return baseURL?
             .appendingPathComponent("VehicleImages", isDirectory: true)
             .appendingPathComponent("\(fileName).image")
+    }
+
+    private func removeVehicleImages() {
+        let baseURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: NinebotAppGroup.identifier)
+            ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+        guard let directory = baseURL?.appendingPathComponent("VehicleImages", isDirectory: true) else {
+            return
+        }
+        try? FileManager.default.removeItem(at: directory)
+    }
+
+    private func removeKeys(withPrefix prefix: String, from defaults: UserDefaults) {
+        let keys = Array(defaults.dictionaryRepresentation().keys)
+        for key in keys where key.hasPrefix(prefix) {
+            defaults.removeObject(forKey: key)
+        }
     }
 
     private func sanitizedFileName(_ value: String) -> String {
