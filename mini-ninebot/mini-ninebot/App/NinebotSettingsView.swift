@@ -1117,30 +1117,22 @@ private struct SettingsProfileCard: View {
     }
 
     private var displayName: String {
-        let resolvedOwner = snapshot?.vehicle.ownerName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if isUsableAccountName(resolvedOwner) {
-            return resolvedOwner
-        }
-
-        if let rawNickname = firstUsableRawString([
-            "auth_nickname",
-            "authNickname",
-            "owner_user_nickname",
-            "ownerUserNickname",
-            "nickname",
-            "nick_name"
-        ]) {
-            return rawNickname
-        }
-
         let accountName = snapshot?.vehicle.accountName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if isUsableAccountName(accountName) {
             return accountName
         }
 
+        let accountUsername = snapshot?.vehicle.accountUsername?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if isUsableAccountName(accountUsername) {
+            return accountUsername
+        }
+
         if let rawAccountName = firstUsableRawString([
             "account_name",
             "accountName",
+            "account_nickname",
+            "accountNickname",
             "account_username",
             "accountUsername",
             "user_name",
@@ -1153,9 +1145,7 @@ private struct SettingsProfileCard: View {
             return cleanAccountText
         }
 
-        return snapshot?.vehicle.accountPhone?.trimmingCharacters(in: .whitespacesAndNewlines)
-            ?? firstRawString(["account_phone", "accountPhone", "phone", "mobile"])
-            ?? cleanAccountText
+        return "未获取昵称"
     }
 
     private var subtitle: String {
@@ -1173,23 +1163,11 @@ private struct SettingsProfileCard: View {
             return accountAvatar
         }
 
-        let resolved = snapshot?.vehicle.ownerAvatarURLString?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if !resolved.isEmpty {
-            return resolved
-        }
         return firstRawString([
             "account_avatar_url",
             "accountAvatarURL",
             "account_avatar",
-            "accountAvatar",
-            "owner_user_avatar",
-            "ownerUserAvatar",
-            "auth_avatar",
-            "authAvatar",
-            "avatar",
-            "avatar_url",
-            "avatarUrl"
+            "accountAvatar"
         ])
     }
 
