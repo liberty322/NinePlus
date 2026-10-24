@@ -1697,6 +1697,7 @@ private struct NinebotTripsView: View {
     var snapshot: NinebotVehicleSnapshot
     var recordedRides: [NinebotRecordedRide] = []
     @State private var selectedMonth = tripMonthString(for: Date())
+    @State private var isManualRefreshing = false
 
     var body: some View {
         ScrollView {
@@ -1735,6 +1736,32 @@ private struct NinebotTripsView: View {
         .background(Color.teslaPageBackground.ignoresSafeArea())
         .navigationTitle("行程")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    Task { await refreshSelectedMonth() }
+                } label: {
+                    if isManualRefreshing || model.syncingTravelMonth == selectedMonth {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                }
+                .disabled(isManualRefreshing || model.syncingTravelMonth != nil)
+                .accessibilityLabel("刷新当前月份行程")
+            }
+        }
+    }
+
+    private func refreshSelectedMonth() async {
+        guard !isManualRefreshing else { return }
+        isManualRefreshing = true
+        await model.syncTravelMonth(
+            vehicleSN: snapshot.vehicle.sn,
+            month: selectedMonth
+        )
+        isManualRefreshing = false
     }
 
     private var monthOptions: [String] {

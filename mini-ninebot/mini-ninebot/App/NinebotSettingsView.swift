@@ -560,7 +560,7 @@ private struct NinebotLoginPage: View {
                                 .frame(maxWidth: .infinity)
                                 .frame(height: 52)
                                 .foregroundStyle(.white)
-                                .background(canSubmit ? Color.loginInk : Color.loginDisabled)
+                                .background(canSubmit ? Color.loginPrimaryControl : Color.loginDisabled)
                                 .clipShape(Capsule())
                             }
                             .buttonStyle(.plain)
@@ -651,8 +651,8 @@ private struct NinebotLoginPage: View {
     private var loginBackground: some View {
         LinearGradient(
             colors: [
-                Color(red: 0.96, green: 0.975, blue: 1.0),
-                Color(red: 0.985, green: 0.988, blue: 0.994)
+                Color.loginBackgroundTop,
+                Color.loginBackgroundBottom
             ],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
@@ -814,8 +814,8 @@ private struct LoginHeroVisual: View {
                 .fill(
                     LinearGradient(
                         colors: [
-                            Color.white.opacity(0.98),
-                            Color(red: 0.90, green: 0.94, blue: 0.99).opacity(0.86)
+                            Color.loginHeroTop,
+                            Color.loginHeroBottom
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
@@ -823,7 +823,7 @@ private struct LoginHeroVisual: View {
                 )
 
             Circle()
-                .fill(Color.white.opacity(0.64))
+                .fill(Color.loginHeroOrb)
                 .frame(width: 220, height: 220)
                 .offset(x: 70, y: -36)
 
@@ -860,13 +860,13 @@ private struct NinePlusLoginLogo: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.loginInk)
+                .fill(Color.loginPrimaryControl)
             Image(systemName: "bolt.fill")
                 .font(.title2.weight(.black))
                 .foregroundStyle(.white)
         }
         .frame(width: 58, height: 58)
-        .shadow(color: Color.loginInk.opacity(0.18), radius: 16, x: 0, y: 8)
+        .shadow(color: Color.loginPrimaryControl.opacity(0.18), radius: 16, x: 0, y: 8)
         .accessibilityLabel("NineBot+")
     }
 }
@@ -1005,21 +1005,79 @@ private struct LoginToast: View {
             .foregroundStyle(.white)
             .padding(.horizontal, 14)
             .padding(.vertical, 9)
-            .background(Color.loginInk.opacity(0.92))
+            .background(Color.loginToastBackground)
             .clipShape(Capsule())
             .shadow(color: Color.black.opacity(0.14), radius: 12, x: 0, y: 6)
     }
 }
 
 private extension Color {
-    static let loginInk = Color(red: 0.09, green: 0.11, blue: 0.16)
-    static let loginMuted = Color(red: 0.48, green: 0.51, blue: 0.58)
-    static let loginAccent = Color(red: 0.13, green: 0.40, blue: 0.86)
-    static let loginDisabled = Color(red: 0.72, green: 0.74, blue: 0.79)
-    static let loginSoftControl = Color(red: 0.91, green: 0.93, blue: 0.96)
-    static let loginCard = Color.white.opacity(0.96)
-    static let loginField = Color(red: 0.975, green: 0.98, blue: 0.99)
-    static let loginBorder = Color(red: 0.84, green: 0.86, blue: 0.90)
+    static let loginInk = loginDynamic(
+        light: UIColor(red: 0.09, green: 0.11, blue: 0.16, alpha: 1),
+        dark: UIColor(red: 0.94, green: 0.95, blue: 0.97, alpha: 1)
+    )
+    static let loginMuted = loginDynamic(
+        light: UIColor(red: 0.48, green: 0.51, blue: 0.58, alpha: 1),
+        dark: UIColor(red: 0.64, green: 0.67, blue: 0.72, alpha: 1)
+    )
+    static let loginAccent = loginDynamic(
+        light: UIColor(red: 0.13, green: 0.40, blue: 0.86, alpha: 1),
+        dark: UIColor(red: 0.33, green: 0.62, blue: 1.00, alpha: 1)
+    )
+    static let loginPrimaryControl = loginDynamic(
+        light: UIColor(red: 0.09, green: 0.11, blue: 0.16, alpha: 1),
+        dark: UIColor(red: 0.13, green: 0.72, blue: 0.30, alpha: 1)
+    )
+    static let loginDisabled = loginDynamic(
+        light: UIColor(red: 0.72, green: 0.74, blue: 0.79, alpha: 1),
+        dark: UIColor(red: 0.28, green: 0.30, blue: 0.34, alpha: 1)
+    )
+    static let loginSoftControl = loginDynamic(
+        light: UIColor(red: 0.91, green: 0.93, blue: 0.96, alpha: 1),
+        dark: UIColor(red: 0.14, green: 0.15, blue: 0.17, alpha: 1)
+    )
+    static let loginCard = loginDynamic(
+        light: UIColor.white,
+        dark: UIColor(red: 0.075, green: 0.08, blue: 0.092, alpha: 1)
+    )
+    static let loginField = loginDynamic(
+        light: UIColor(red: 0.975, green: 0.98, blue: 0.99, alpha: 1),
+        dark: UIColor(red: 0.12, green: 0.13, blue: 0.15, alpha: 1)
+    )
+    static let loginBorder = loginDynamic(
+        light: UIColor(red: 0.84, green: 0.86, blue: 0.90, alpha: 1),
+        dark: UIColor(red: 0.27, green: 0.29, blue: 0.33, alpha: 1)
+    )
+    static let loginBackgroundTop = loginDynamic(
+        light: UIColor(red: 0.96, green: 0.975, blue: 1.0, alpha: 1),
+        dark: UIColor(red: 0.035, green: 0.041, blue: 0.052, alpha: 1)
+    )
+    static let loginBackgroundBottom = loginDynamic(
+        light: UIColor(red: 0.985, green: 0.988, blue: 0.994, alpha: 1),
+        dark: UIColor(red: 0.018, green: 0.021, blue: 0.027, alpha: 1)
+    )
+    static let loginHeroTop = loginDynamic(
+        light: UIColor.white.withAlphaComponent(0.98),
+        dark: UIColor(red: 0.10, green: 0.12, blue: 0.15, alpha: 1)
+    )
+    static let loginHeroBottom = loginDynamic(
+        light: UIColor(red: 0.90, green: 0.94, blue: 0.99, alpha: 0.86),
+        dark: UIColor(red: 0.055, green: 0.14, blue: 0.10, alpha: 1)
+    )
+    static let loginHeroOrb = loginDynamic(
+        light: UIColor.white.withAlphaComponent(0.64),
+        dark: UIColor(red: 0.13, green: 0.28, blue: 0.18, alpha: 0.48)
+    )
+    static let loginToastBackground = loginDynamic(
+        light: UIColor(red: 0.09, green: 0.11, blue: 0.16, alpha: 0.92),
+        dark: UIColor(red: 0.16, green: 0.18, blue: 0.21, alpha: 0.96)
+    )
+
+    private static func loginDynamic(light: UIColor, dark: UIColor) -> Color {
+        Color(UIColor { traits in
+            traits.userInterfaceStyle == .dark ? dark : light
+        })
+    }
 }
 
 private struct SettingsProfileCard: View {
@@ -1292,7 +1350,12 @@ private struct SettingsNavigationRow: View {
 
 private struct NinebotDiagnosticsView: View {
     @ObservedObject var model: NinebotViewModel
+    @Environment(\.dismiss) private var dismiss
     @State private var copiedMessage: String?
+    @State private var isRefreshingCaches = false
+    @State private var pendingDestructiveAction: DiagnosticsDestructiveAction?
+    @AppStorage(NinebotAppearanceMode.storageKey)
+    private var appearanceModeRaw = NinebotAppearanceMode.system.rawValue
 
     private var diagnostics: NinebotDiagnosticsSnapshot {
         model.diagnosticsSnapshot()
@@ -1302,6 +1365,10 @@ private struct NinebotDiagnosticsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 DiagnosticsHeroCard(diagnostics: diagnostics)
+
+                DiagnosticsAppearanceCard(
+                    selectedModeRawValue: $appearanceModeRaw
+                )
 
                 Toggle(isOn: capturePrivacyProtectionBinding) {
                     SettingsNavigationRow(
@@ -1319,6 +1386,56 @@ private struct NinebotDiagnosticsView: View {
                 DiagnosticsEventCard(title: "桌面小组件", event: diagnostics.lastWidgetRefreshEvent)
 
                 DiagnosticsCacheCard(diagnostics: diagnostics)
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("维护")
+                        .font(.headline)
+                        .foregroundStyle(Color.teslaPrimaryText)
+
+                    Button {
+                        refreshCaches()
+                    } label: {
+                        DiagnosticsActionRow(
+                            title: "刷新缓存",
+                            subtitle: "清除车况、曲线、地址和接口行程缓存后重新拉取",
+                            systemImage: "arrow.clockwise.circle.fill",
+                            tint: .blue,
+                            isWorking: isRefreshingCaches
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isRefreshingCaches || model.isLoading)
+
+                    Divider()
+
+                    Button {
+                        pendingDestructiveAction = .logout
+                    } label: {
+                        DiagnosticsActionRow(
+                            title: "退出登录",
+                            subtitle: "清除九号账号会话和车况缓存，保留服务器配置、本地记录与偏好",
+                            systemImage: "rectangle.portrait.and.arrow.right",
+                            tint: .orange
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    Divider()
+
+                    Button {
+                        pendingDestructiveAction = .reset
+                    } label: {
+                        DiagnosticsActionRow(
+                            title: "重置全部本地数据",
+                            subtitle: "清除登录、服务器配置、缓存、本地轨迹和偏好；不删除服务器数据",
+                            systemImage: "trash.fill",
+                            tint: .red
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(16)
+                .ninePlusCard(cornerRadius: 24)
 
                 Button(role: .destructive) {
                     model.clearMessages()
@@ -1363,6 +1480,29 @@ private struct NinebotDiagnosticsView: View {
             }
         }
         .animation(.easeInOut(duration: 0.18), value: copiedMessage)
+        .confirmationDialog(
+            pendingDestructiveAction?.title ?? "",
+            isPresented: Binding(
+                get: { pendingDestructiveAction != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        pendingDestructiveAction = nil
+                    }
+                }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("继续", role: .destructive) {
+                guard let action = pendingDestructiveAction else { return }
+                pendingDestructiveAction = nil
+                perform(action)
+            }
+            Button("取消", role: .cancel) {
+                pendingDestructiveAction = nil
+            }
+        } message: {
+            Text(pendingDestructiveAction?.message ?? "")
+        }
     }
 
     private var capturePrivacyProtectionBinding: Binding<Bool> {
@@ -1370,6 +1510,119 @@ private struct NinebotDiagnosticsView: View {
             get: { model.capturePrivacyProtectionEnabled },
             set: { model.setCapturePrivacyProtectionEnabled($0) }
         )
+    }
+
+    private func refreshCaches() {
+        guard !isRefreshingCaches else { return }
+        isRefreshingCaches = true
+        Task { @MainActor in
+            await model.refreshCaches()
+            isRefreshingCaches = false
+            copiedMessage = model.errorMessage == nil ? "缓存已刷新" : "缓存已清除，重新拉取失败"
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            copiedMessage = nil
+        }
+    }
+
+    private func perform(_ action: DiagnosticsDestructiveAction) {
+        switch action {
+        case .logout:
+            model.logoutCurrentAccount()
+        case .reset:
+            model.resetAllLocalData()
+        }
+        dismiss()
+    }
+}
+
+private enum DiagnosticsDestructiveAction: String, Identifiable {
+    case logout
+    case reset
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .logout: return "退出当前九号账号？"
+        case .reset: return "重置全部本地数据？"
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .logout:
+            return "会清除九号登录会话、车况和缓存，保留服务器地址、Token、本地骑行记录和设置。"
+        case .reset:
+            return "会清除本机全部 NinePlus 数据，包括服务器配置、Token、登录状态、本地轨迹和偏好。服务器数据库不会受影响。"
+        }
+    }
+}
+
+private struct DiagnosticsAppearanceCard: View {
+    @Binding var selectedModeRawValue: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: "circle.lefthalf.filled")
+                    .foregroundStyle(Color.teslaGreen)
+                Text("外观")
+                    .font(.headline)
+                    .foregroundStyle(Color.teslaPrimaryText)
+            }
+
+            Picker("外观", selection: $selectedModeRawValue) {
+                ForEach(NinebotAppearanceMode.allCases) { mode in
+                    Text(mode.title).tag(mode.rawValue)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            Text("可手动选择浅色或深色，也可以跟随系统外观自动切换。")
+                .font(.caption)
+                .foregroundStyle(Color.teslaSecondaryText)
+        }
+        .padding(16)
+        .ninePlusCard(cornerRadius: 24)
+    }
+}
+
+private struct DiagnosticsActionRow: View {
+    var title: String
+    var subtitle: String
+    var systemImage: String
+    var tint: Color
+    var isWorking = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(tint)
+                .frame(width: 28)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.teslaPrimaryText)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(Color.teslaSecondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 8)
+
+            if isWorking {
+                ProgressView()
+                    .controlSize(.small)
+            } else {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.teslaSecondaryText)
+            }
+        }
+        .contentShape(Rectangle())
     }
 }
 

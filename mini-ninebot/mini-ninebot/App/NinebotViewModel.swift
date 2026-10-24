@@ -583,6 +583,77 @@ final class NinebotViewModel: ObservableObject {
         statusMessage = nil
     }
 
+    func refreshCaches() async {
+        store.clearServerCaches()
+        history = [:]
+        resolvedAddresses = [:]
+        rideDetails = [:]
+        loadingRideDetailKeys = []
+        vehicleInsights = [:]
+        lastAutomaticRefreshAt = nil
+
+        guard hasConfiguration else {
+            dashboard = .empty
+            errorMessage = nil
+            statusMessage = "缓存已刷新"
+            return
+        }
+
+        await refreshDashboard()
+    }
+
+    func logoutCurrentAccount() {
+        store.clearVehicleSessionData()
+        NinebotChargingLiveActivityManager.sync(with: .empty)
+        loginResult = nil
+        account = ""
+        password = ""
+        dashboard = .empty
+        history = [:]
+        resolvedAddresses = [:]
+        recordedRides = store.loadRecordedRides()
+        rideDetails = [:]
+        loadingRideDetailKeys = []
+        syncingTravelMonth = nil
+        vehicleInsights = [:]
+        activeVehicleAction = nil
+        activeVehicleActionSN = nil
+        errorMessage = nil
+        statusMessage = nil
+        loadingMessage = nil
+        isLoading = false
+        lastAutomaticRefreshAt = nil
+        WidgetCenter.shared.reloadAllTimelines()
+    }
+
+    func resetAllLocalData() {
+        store.clearAllLocalData()
+        NinebotChargingLiveActivityManager.sync(with: .empty)
+        baseURLString = ""
+        bearerToken = ""
+        account = ""
+        password = ""
+        pushDeviceToken = nil
+        loginResult = nil
+        dashboard = .empty
+        history = [:]
+        resolvedAddresses = [:]
+        recordedRides = []
+        rideDetails = [:]
+        loadingRideDetailKeys = []
+        syncingTravelMonth = nil
+        vehicleInsights = [:]
+        capturePrivacyProtectionEnabled = false
+        activeVehicleAction = nil
+        activeVehicleActionSN = nil
+        errorMessage = nil
+        statusMessage = nil
+        loadingMessage = nil
+        isLoading = false
+        lastAutomaticRefreshAt = nil
+        WidgetCenter.shared.reloadAllTimelines()
+    }
+
     func setCapturePrivacyProtectionEnabled(_ isEnabled: Bool) {
         capturePrivacyProtectionEnabled = isEnabled
         store.saveCapturePrivacyProtectionEnabled(isEnabled)

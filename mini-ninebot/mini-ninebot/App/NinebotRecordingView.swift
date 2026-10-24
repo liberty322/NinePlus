@@ -9,6 +9,9 @@ struct NinebotRecordingView: View {
     @ObservedObject var model: NinebotViewModel
     @StateObject private var recorder = NinebotRideRecorder()
     @State private var pendingRecord: NinebotRecordedRide?
+    @Environment(\.scenePhase) private var scenePhase
+    @AppStorage("ninebot.recording.keep.screen.awake")
+    private var keepScreenAwake = true
 
     private var snapshot: NinebotVehicleSnapshot? {
         model.dashboard.primaryVehicle
@@ -49,6 +52,8 @@ struct NinebotRecordingView: View {
                         }
                     )
 
+                    RecordingKeepAwakeCard(isEnabled: $keepScreenAwake)
+
                     RecordingMetricsGrid(recorder: recorder)
 
                     RecordingTrackPreview(
@@ -85,10 +90,56 @@ struct NinebotRecordingView: View {
         }
         .onAppear {
             recorder.startPreview()
+            updateIdleTimer()
         }
         .onDisappear {
             recorder.stopPreviewIfIdle()
+            UIApplication.shared.isIdleTimerDisabled = false
         }
+        .onChange(of: recorder.isRecording) { _, _ in
+            updateIdleTimer()
+        }
+        .onChange(of: keepScreenAwake) { _, _ in
+            updateIdleTimer()
+        }
+        .onChange(of: scenePhase) { _, _ in
+            updateIdleTimer()
+        }
+    }
+
+    private func updateIdleTimer() {
+        let shouldKeepAwake = keepScreenAwake
+            && recorder.isRecording
+            && scenePhase == .active
+        UIApplication.shared.isIdleTimerDisabled = shouldKeepAwake
+    }
+}
+
+private struct RecordingKeepAwakeCard: View {
+    @Binding var isEnabled: Bool
+
+    var body: some View {
+        Toggle(isOn: $isEnabled) {
+            HStack(spacing: 12) {
+                Image(systemName: "sun.max.fill")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.orange)
+                    .frame(width: 28)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("记录时保持屏幕常亮")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.teslaPrimaryText)
+                    Text("开启后仅在记录中阻止自动锁屏；会增加耗电和发热，不会提高 GPS 精度。")
+                        .font(.caption)
+                        .foregroundStyle(Color.teslaSecondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .tint(Color.teslaGreen)
+        .padding(16)
+        .ninePlusCard(cornerRadius: 24)
     }
 }
 
@@ -155,6 +206,7 @@ final class NinebotRideRecorder: NSObject, ObservableObject, CLLocationManagerDe
     private var speedSamples: [Double] = []
     private var lastMotionTimestamp: TimeInterval?
     private var smoothedMotionG: Double?
+    private var lastSignificantMotionAt = Date()
     private var ignoreLocationUntil: Date?
     private var ignoreMotionUntil: Date?
     private var appActiveObserver: NSObjectProtocol?
@@ -168,8 +220,12 @@ final class NinebotRideRecorder: NSObject, ObservableObject, CLLocationManagerDe
     private let maximumLocationDeltaTimeForSpeed: TimeInterval = 6
     private let maximumLocationGapBeforeCooldown: TimeInterval = 8
     private let recoveryCooldownDuration: TimeInterval = 2.2
-    private let goodHorizontalAccuracy = 35.0
-    private let maximumHorizontalAccuracy = 60.0
+    private let goodHorizontalAccuracy = 20.0
+    private let maximumHorizontalAccuracy = 50.0
+    private let maximumSpeedAccuracy = 1.8
+    private let stationaryDetectionDelay: TimeInterval = 2.2
+    private let stationaryMotionThreshold = 0.055
+    private let stationarySegmentTolerance = 8.0
     private let maximumDisplayedAccelerationMPS2 = 4.5
     private let maximumDisplayedDecelerationMPS2 = 7.0
     private let maximumMotionSampleGap: TimeInterval = 0.75
@@ -286,6 +342,7 @@ final class NinebotRideRecorder: NSObject, ObservableObject, CLLocationManagerDe
         lastAcceptedLocationAt = nil
         lastMotionTimestamp = nil
         smoothedMotionG = nil
+        lastSignificantMotionAt = Date()
         gpsQuality = .stabilizing
         ignoreLocationUntil = Date().addingTimeInterval(recoveryCooldownDuration)
         ignoreMotionUntil = Date().addingTimeInterval(motionCooldownDuration)
@@ -398,12 +455,21 @@ final class NinebotRideRecorder: NSObject, ObservableObject, CLLocationManagerDe
             acceleration.y * acceleration.y +
             acceleration.z * acceleration.z
         )
+        let rotation = motion.rotationRate
+        let rotationMagnitude = sqrt(
+            rotation.x * rotation.x +
+            rotation.y * rotation.y +
+            rotation.z * rotation.z
+        )
         guard g.isFinite, g <= maximumReasonableMotionG else {
             currentAccelerationG = 0
             return
         }
 
         let normalizedG = g < 0.025 ? 0 : g
+        if normalizedG >= stationaryMotionThreshold || rotationMagnitude >= 0.16 {
+            lastSignificantMotionAt = Date()
+        }
         let previousG = smoothedMotionG ?? 0
         let filteredG = previousG + (normalizedG - previousG) * 0.18
         let maxStep = 0.08
@@ -455,6 +521,17 @@ final class NinebotRideRecorder: NSObject, ObservableObject, CLLocationManagerDe
             segmentDistance: segmentDistance
         ) else {
             acceptBaselineLocation(location, gpsQuality: .stabilizing)
+            return
+        }
+
+        if isLikelyStationary,
+           location.speed >= 0,
+           location.speed < 0.8,
+           segmentDistance <= stationarySegmentTolerance {
+            acceptBaselineLocation(
+                location,
+                gpsQuality: location.horizontalAccuracy <= goodHorizontalAccuracy ? .good : .weak
+            )
             return
         }
 
@@ -537,6 +614,7 @@ final class NinebotRideRecorder: NSObject, ObservableObject, CLLocationManagerDe
         lastSpeedMPS = nil
         smoothedSpeedMPS = nil
         smoothedMotionG = nil
+        lastSignificantMotionAt = Date()
         currentSpeedKmh = 0
         currentAccelerationG = 0
         gpsQuality = .stabilizing
@@ -564,6 +642,11 @@ final class NinebotRideRecorder: NSObject, ObservableObject, CLLocationManagerDe
         gpsQuality = location.horizontalAccuracy <= goodHorizontalAccuracy ? .good : .weak
     }
 
+    private var isLikelyStationary: Bool {
+        motionManager.isDeviceMotionActive
+            && Date().timeIntervalSince(lastSignificantMotionAt) >= stationaryDetectionDelay
+    }
+
     private func speedCandidate(
         from location: CLLocation,
         previousLocation: CLLocation,
@@ -572,7 +655,7 @@ final class NinebotRideRecorder: NSObject, ObservableObject, CLLocationManagerDe
     ) -> Double? {
         if location.speed >= 0,
            location.speedAccuracy >= 0,
-           location.speedAccuracy <= 6,
+           location.speedAccuracy <= maximumSpeedAccuracy,
            location.horizontalAccuracy <= maximumHorizontalAccuracy,
            location.speed * 3.6 <= maximumReasonableSpeedKmh {
             return max(location.speed, 0)
