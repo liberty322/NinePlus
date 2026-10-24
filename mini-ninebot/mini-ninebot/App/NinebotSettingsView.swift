@@ -1117,11 +1117,26 @@ private struct SettingsProfileCard: View {
     }
 
     private var displayName: String {
+        let accountName = snapshot?.vehicle.accountName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !accountName.isEmpty, !isPlaceholderAccountName(accountName) {
+            return accountName
+        }
+
+        let phone = snapshot?.vehicle.accountPhone?.trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? firstRawString(["account_phone", "accountPhone", "phone", "mobile"])
+            ?? ""
+        if !phone.isEmpty {
+            return phone
+        }
+
         let resolved = snapshot?.vehicle.ownerName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if !resolved.isEmpty {
+        if !resolved.isEmpty, !isPlaceholderAccountName(resolved) {
             return resolved
         }
+
         return firstRawString([
+            "account_name",
+            "accountName",
             "owner_user_nickname",
             "ownerUserNickname",
             "auth_nickname",
@@ -1141,12 +1156,22 @@ private struct SettingsProfileCard: View {
     }
 
     private var avatarURLString: String? {
+        let accountAvatar = snapshot?.vehicle.accountAvatarURLString?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !accountAvatar.isEmpty {
+            return accountAvatar
+        }
+
         let resolved = snapshot?.vehicle.ownerAvatarURLString?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !resolved.isEmpty {
             return resolved
         }
         return firstRawString([
+            "account_avatar_url",
+            "accountAvatarURL",
+            "account_avatar",
+            "accountAvatar",
             "owner_user_avatar",
             "ownerUserAvatar",
             "auth_avatar",
@@ -1160,6 +1185,11 @@ private struct SettingsProfileCard: View {
     private var cleanAccountText: String {
         let value = accountText.trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? "NineBot+" : value
+    }
+
+    private func isPlaceholderAccountName(_ value: String) -> Bool {
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized.hasPrefix("cv_") || normalized.hasPrefix("nv_")
     }
 
     private func firstRawString(_ keys: [String]) -> String? {

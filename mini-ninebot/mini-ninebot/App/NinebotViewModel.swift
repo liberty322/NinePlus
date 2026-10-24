@@ -150,6 +150,7 @@ final class NinebotViewModel: ObservableObject {
 
     private let store = NinebotSharedStore()
     private var lastAutomaticRefreshAt: Date?
+    private var travelSyncDates: [String: Date] = [:]
 
     init() {
         let configuration = store.loadConfiguration()
@@ -390,7 +391,7 @@ final class NinebotViewModel: ObservableObject {
             defer { self.syncingTravelMonth = nil }
 
             let client = try makeClient()
-            let page = try await client.syncTravelMonth(sn: vehicleSN, month: month, pageSize: 100)
+            let page = try await client.syncTravelMonth(sn: vehicleSN, month: month, pageSize: 500)
             self.store.upsertInterfaceRideRecords(page.records, sn: vehicleSN)
 
             let dashboard = try await client.fetchDashboard(selectedSN: vehicleSN)
@@ -404,9 +405,22 @@ final class NinebotViewModel: ObservableObject {
             } else {
                 self.statusMessage = "已获取 \(Self.displayMonth(month)) \(page.total) 条行程"
             }
+            self.travelSyncDates["\(vehicleSN)|\(month)"] = Date()
             self.errorMessage = nil
             WidgetCenter.shared.reloadAllTimelines()
         }
+    }
+
+    func autoSyncTravelMonthIfNeeded(vehicleSN: String, month: String) async {
+        let key = "\(vehicleSN)|\(month)"
+        if syncingTravelMonth == month {
+            return
+        }
+        if let lastSyncedAt = travelSyncDates[key],
+           Date().timeIntervalSince(lastSyncedAt) < 10 * 60 {
+            return
+        }
+        await syncTravelMonth(vehicleSN: vehicleSN, month: month)
     }
 
     func resolveAddressesNow() async {

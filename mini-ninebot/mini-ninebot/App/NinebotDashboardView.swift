@@ -1736,6 +1736,12 @@ private struct NinebotTripsView: View {
         .background(Color.teslaPageBackground.ignoresSafeArea())
         .navigationTitle("行程")
         .navigationBarTitleDisplayMode(.inline)
+        .task(id: selectedMonth) {
+            await model.autoSyncTravelMonthIfNeeded(
+                vehicleSN: snapshot.vehicle.sn,
+                month: selectedMonth
+            )
+        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
