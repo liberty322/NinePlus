@@ -1117,34 +1117,45 @@ private struct SettingsProfileCard: View {
     }
 
     private var displayName: String {
+        let resolvedOwner = snapshot?.vehicle.ownerName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if isUsableAccountName(resolvedOwner) {
+            return resolvedOwner
+        }
+
+        if let rawNickname = firstUsableRawString([
+            "auth_nickname",
+            "authNickname",
+            "owner_user_nickname",
+            "ownerUserNickname",
+            "nickname",
+            "nick_name"
+        ]) {
+            return rawNickname
+        }
+
         let accountName = snapshot?.vehicle.accountName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if !accountName.isEmpty, !isPlaceholderAccountName(accountName) {
+        if isUsableAccountName(accountName) {
             return accountName
         }
 
-        let phone = snapshot?.vehicle.accountPhone?.trimmingCharacters(in: .whitespacesAndNewlines)
-            ?? firstRawString(["account_phone", "accountPhone", "phone", "mobile"])
-            ?? ""
-        if !phone.isEmpty {
-            return phone
-        }
-
-        let resolved = snapshot?.vehicle.ownerName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if !resolved.isEmpty, !isPlaceholderAccountName(resolved) {
-            return resolved
-        }
-
-        return firstRawString([
+        if let rawAccountName = firstUsableRawString([
             "account_name",
             "accountName",
-            "owner_user_nickname",
-            "ownerUserNickname",
-            "auth_nickname",
-            "authNickname",
-            "nickname",
+            "account_username",
+            "accountUsername",
             "user_name",
             "userName"
-        ]) ?? cleanAccountText
+        ]) {
+            return rawAccountName
+        }
+
+        if isUsableAccountName(cleanAccountText) {
+            return cleanAccountText
+        }
+
+        return snapshot?.vehicle.accountPhone?.trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? firstRawString(["account_phone", "accountPhone", "phone", "mobile"])
+            ?? cleanAccountText
     }
 
     private var subtitle: String {
@@ -1190,6 +1201,29 @@ private struct SettingsProfileCard: View {
     private func isPlaceholderAccountName(_ value: String) -> Bool {
         let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return normalized.hasPrefix("cv_") || normalized.hasPrefix("nv_")
+    }
+
+    private func isPhoneNumber(_ value: String) -> Bool {
+        let digits = value.filter(\.isNumber)
+        return digits.count >= 7 && digits.count == value.filter {
+            !$0.isWhitespace && $0 != "-" && $0 != "(" && $0 != ")" && $0 != "+"
+        }.count
+    }
+
+    private func isUsableAccountName(_ value: String) -> Bool {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !trimmed.isEmpty && !isPlaceholderAccountName(trimmed) && !isPhoneNumber(trimmed)
+    }
+
+    private func firstUsableRawString(_ keys: [String]) -> String? {
+        guard let raw = snapshot?.vehicle.raw else { return nil }
+        for key in keys {
+            if let value = raw[key]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+               isUsableAccountName(value) {
+                return value
+            }
+        }
+        return nil
     }
 
     private func firstRawString(_ keys: [String]) -> String? {

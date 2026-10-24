@@ -177,6 +177,35 @@ final class NinebotViewModel: ObservableObject {
     }
 
     var currentAccountDisplay: String {
+        let primary = dashboard.primaryVehicle?.vehicle
+        let candidates = [
+            primary?.ownerName,
+            loginResult?.displayName,
+            primary?.accountName
+        ]
+        for candidate in candidates {
+            let value = candidate?.trimmed ?? ""
+            if isUsableAccountName(value) {
+                return value
+            }
+        }
+
+        if let raw = primary?.raw {
+            for key in [
+                "auth_nickname",
+                "owner_user_nickname",
+                "nickname",
+                "account_name",
+                "account_username",
+                "user_name"
+            ] {
+                let value = raw[key]?.stringValue?.trimmed ?? ""
+                if isUsableAccountName(value) {
+                    return value
+                }
+            }
+        }
+
         let savedPhone = loginResult?.phone?.trimmed ?? ""
         return savedPhone.isEmpty ? "未绑定账号" : savedPhone
     }
@@ -184,6 +213,20 @@ final class NinebotViewModel: ObservableObject {
     var hasLoginAccount: Bool {
         !(loginResult?.phone?.trimmed ?? "").isEmpty
             && !(loginResult?.sessionToken?.trimmed ?? "").isEmpty
+    }
+
+    private func isUsableAccountName(_ value: String) -> Bool {
+        let trimmed = value.trimmed
+        guard !trimmed.isEmpty else { return false }
+        let normalized = trimmed.lowercased()
+        guard !normalized.hasPrefix("cv_"), !normalized.hasPrefix("nv_") else {
+            return false
+        }
+        let digits = trimmed.filter(\.isNumber)
+        let phoneCharacters = trimmed.filter {
+            !$0.isWhitespace && $0 != "-" && $0 != "(" && $0 != ")" && $0 != "+"
+        }
+        return digits.count < 7 || digits.count != phoneCharacters.count
     }
 
     var isAddressGeocodingEnabled: Bool {
