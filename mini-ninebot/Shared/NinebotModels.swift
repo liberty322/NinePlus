@@ -48,6 +48,7 @@ struct NinebotServerConfiguration: Codable, Equatable {
 struct NinebotLoginResult: Codable, Equatable {
     var uuid: String?
     var phone: String?
+    var displayName: String?
     var areaCode: String?
     var region: String?
     var businessUID: String?

@@ -504,6 +504,7 @@ private extension NinebotServerClient {
         return NinebotLoginResult(
             uuid: object["uuid"]?.stringValue,
             phone: object["phone"]?.stringValue,
+            displayName: object["display_name"]?.stringValue ?? object["displayName"]?.stringValue,
             areaCode: object["area_code"]?.stringValue,
             region: object["region"]?.stringValue,
             businessUID: object["business_uid"]?.stringValue,
