@@ -574,6 +574,22 @@ private extension NinebotServerClient {
                 ["owner_avatar_url", "ownerAvatarURL", "owner_user_avatar", "ownerUserAvatar"],
                 in: object
             ),
+            accountName: firstString(
+                ["account_name", "accountName"],
+                in: object
+            ),
+            accountUsername: firstString(
+                ["account_username", "accountUsername"],
+                in: object
+            ),
+            accountPhone: firstString(
+                ["account_phone", "accountPhone", "phone", "mobile"],
+                in: object
+            ),
+            accountAvatarURLString: firstString(
+                ["account_avatar_url", "accountAvatarURL", "account_avatar", "accountAvatar"],
+                in: object
+            ),
             raw: object
         )
     }

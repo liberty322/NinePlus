@@ -75,6 +75,10 @@ struct NinebotVehicleInfo: Codable, Equatable, Identifiable {
     var imageURLString: String?
     var ownerName: String? = nil
     var ownerAvatarURLString: String? = nil
+    var accountName: String? = nil
+    var accountUsername: String? = nil
+    var accountPhone: String? = nil
+    var accountAvatarURLString: String? = nil
     var raw: [String: JSONValue]?
 
     var id: String { sn }
