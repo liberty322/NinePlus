@@ -14,10 +14,38 @@ private enum NinebotRootTab: Hashable {
     case settings
 }
 
+enum NinebotAppearanceMode: String, CaseIterable, Identifiable {
+    case system
+    case light
+    case dark
+
+    static let storageKey = "ninebot.appearance.mode"
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .system: return "跟随系统"
+        case .light: return "浅色"
+        case .dark: return "深色"
+        }
+    }
+
+    var preferredColorScheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
+        }
+    }
+}
+
 struct ContentView: View {
     @StateObject private var model = NinebotViewModel()
     @Environment(\.scenePhase) private var scenePhase
     @State private var selectedTab: NinebotRootTab = .dashboard
+    @AppStorage(NinebotAppearanceMode.storageKey)
+    private var appearanceModeRaw = NinebotAppearanceMode.system.rawValue
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -62,6 +90,9 @@ struct ContentView: View {
             .tag(NinebotRootTab.settings)
         }
         .tint(Color(red: 0.13, green: 0.82, blue: 0.28))
+        .preferredColorScheme(
+            NinebotAppearanceMode(rawValue: appearanceModeRaw)?.preferredColorScheme
+        )
         .task {
             consumePendingAppRoute()
             NinebotBackgroundTaskManager.scheduleRefresh()

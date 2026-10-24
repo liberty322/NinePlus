@@ -21,7 +21,6 @@ struct mini_ninebotApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .preferredColorScheme(.light)
         }
     }
 }
