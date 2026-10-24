@@ -179,9 +179,9 @@ final class NinebotViewModel: ObservableObject {
     var currentAccountDisplay: String {
         let primary = dashboard.primaryVehicle?.vehicle
         let candidates = [
-            primary?.ownerName,
-            loginResult?.displayName,
-            primary?.accountName
+            primary?.accountName,
+            primary?.accountUsername,
+            loginResult?.displayName
         ]
         for candidate in candidates {
             let value = candidate?.trimmed ?? ""
@@ -192,11 +192,12 @@ final class NinebotViewModel: ObservableObject {
 
         if let raw = primary?.raw {
             for key in [
-                "auth_nickname",
-                "owner_user_nickname",
-                "nickname",
                 "account_name",
+                "accountName",
+                "account_nickname",
+                "accountNickname",
                 "account_username",
+                "accountUsername",
                 "user_name"
             ] {
                 let value = raw[key]?.stringValue?.trimmed ?? ""
@@ -206,8 +207,7 @@ final class NinebotViewModel: ObservableObject {
             }
         }
 
-        let savedPhone = loginResult?.phone?.trimmed ?? ""
-        return savedPhone.isEmpty ? "未绑定账号" : savedPhone
+        return "未获取昵称"
     }
 
     var hasLoginAccount: Bool {
