@@ -229,7 +229,11 @@ struct NinebotServerClient {
                 state.totalMileage = totalMileage
             }
             let dashboardVehicle = dashboardObject?["vehicle"].flatMap(Self.vehicleInfo) ?? vehicle
-            let resolvedVehicle = Self.vehicleInfo(dashboardVehicle, addingImageFrom: status, battery: battery)
+            let accountVehicle = Self.vehicleInfo(
+                dashboardVehicle,
+                mergingAccountIdentityFrom: vehicle
+            )
+            let resolvedVehicle = Self.vehicleInfo(accountVehicle, addingImageFrom: status, battery: battery)
             snapshots.append(NinebotVehicleSnapshot(vehicle: resolvedVehicle, state: state))
         }
 
@@ -251,6 +255,17 @@ struct NinebotServerClient {
         let payload = try await request(method: "GET", path: ["dashboard"])
         let root = payload.objectValue ?? [:]
         let values = Self.arrayPayload(from: payload, preferredKeys: ["vehicles", "data"])
+        let accountVehicles: [NinebotVehicleInfo]
+        if let vehiclesPayload = try? await request(method: "GET", path: ["vehicles"]) {
+            accountVehicles = Self.arrayPayload(from: vehiclesPayload, preferredKeys: ["vehicles", "data"])
+                .compactMap(Self.vehicleInfo)
+        } else {
+            accountVehicles = []
+        }
+        let accountVehiclesBySN = Dictionary(
+            accountVehicles.map { ($0.sn, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
         var snapshots: [NinebotVehicleSnapshot] = []
 
         for value in values {
@@ -272,7 +287,11 @@ struct NinebotServerClient {
                 prediction: prediction,
                 updatedAt: updatedAt
             )
-            let resolvedVehicle = Self.vehicleInfo(vehicle, addingImageFrom: status, battery: battery)
+            let accountVehicle = Self.vehicleInfo(
+                vehicle,
+                mergingAccountIdentityFrom: accountVehiclesBySN[vehicle.sn]
+            )
+            let resolvedVehicle = Self.vehicleInfo(accountVehicle, addingImageFrom: status, battery: battery)
             snapshots.append(NinebotVehicleSnapshot(vehicle: resolvedVehicle, state: state))
         }
 
@@ -584,7 +603,7 @@ private extension NinebotServerClient {
                 in: object
             ),
             accountPhone: firstString(
-                ["account_phone", "accountPhone", "phone", "mobile"],
+                ["account_phone", "accountPhone"],
                 in: object
             ),
             accountAvatarURLString: firstString(
@@ -615,6 +634,76 @@ private extension NinebotServerClient {
         var resolved = vehicle
         resolved.imageURLString = imageURLString
         return resolved
+    }
+
+    static func vehicleInfo(
+        _ vehicle: NinebotVehicleInfo,
+        mergingAccountIdentityFrom accountVehicle: NinebotVehicleInfo?
+    ) -> NinebotVehicleInfo {
+        guard let accountVehicle else { return vehicle }
+
+        var resolved = vehicle
+        if !isUsableAccountName(resolved.accountName) {
+            resolved.accountName = accountVehicle.accountName
+        }
+        if !isUsableAccountName(resolved.accountUsername) {
+            resolved.accountUsername = accountVehicle.accountUsername
+        }
+        if isBlank(resolved.accountPhone) {
+            resolved.accountPhone = accountVehicle.accountPhone
+        }
+        if isBlank(resolved.accountAvatarURLString) {
+            resolved.accountAvatarURLString = accountVehicle.accountAvatarURLString
+        }
+        if !isUsableAccountName(resolved.ownerName) {
+            resolved.ownerName = accountVehicle.ownerName
+        }
+        if isBlank(resolved.ownerAvatarURLString) {
+            resolved.ownerAvatarURLString = accountVehicle.ownerAvatarURLString
+        }
+
+        var raw = resolved.raw ?? [:]
+        for key in ["account_name", "accountName", "account_nickname", "accountNickname", "account_username", "accountUsername"] {
+            let current = raw[key]?.stringValue
+            if !isUsableAccountName(current),
+               let source = accountVehicle.raw?[key]?.stringValue,
+               isUsableAccountName(source) {
+                raw[key] = .string(source)
+            }
+        }
+        for key in ["account_phone", "accountPhone", "account_avatar_url", "accountAvatarURL", "account_avatar", "accountAvatar"] {
+            if isBlank(raw[key]?.stringValue),
+               let source = accountVehicle.raw?[key]?.stringValue,
+               !isBlank(source) {
+                raw[key] = .string(source)
+            }
+        }
+        resolved.raw = raw.isEmpty ? nil : raw
+        return resolved
+    }
+
+    static func isBlank(_ value: String?) -> Bool {
+        value?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false
+    }
+
+    static func isUsableAccountName(_ value: String?) -> Bool {
+        guard let value else { return false }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+
+        let normalized = trimmed.lowercased()
+        guard !normalized.hasPrefix("cv_"),
+              !normalized.hasPrefix("nv_"),
+              normalized != "ninebot",
+              normalized != "九号账号" else {
+            return false
+        }
+
+        let digits = trimmed.filter(\.isNumber)
+        let phoneCharacters = trimmed.filter {
+            !$0.isWhitespace && $0 != "-" && $0 != "(" && $0 != ")" && $0 != "+"
+        }
+        return digits.count < 7 || digits.count != phoneCharacters.count
     }
 
     static func serverPrediction(from value: JSONValue) -> NinebotServerPrediction? {
